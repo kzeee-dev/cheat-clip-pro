@@ -630,9 +630,14 @@ def compute_audio_energy_heatmap(file_path: Union[str, Path], duration: float, n
     return heatmap
 
 
-def transcribe_local_video_file(file_path: Union[str, Path], progress_callback=None) -> List[Dict[str, Any]]:
+def transcribe_local_video_file(
+    file_path: Union[str, Path],
+    progress_callback=None,
+    target_language: Optional[str] = None
+) -> List[Dict[str, Any]]:
     """
     Transcribes speech from a local video or audio file using OpenAI Whisper.
+    Strictly focuses on Bahasa Indonesia or English.
     Returns standard transcript segments formatted as:
     [{"text": "...", "start": 0.0, "duration": 3.5}, ...]
     """
@@ -650,15 +655,22 @@ def transcribe_local_video_file(file_path: Union[str, Path], progress_callback=N
     if progress_callback:
         progress_callback("Running Whisper AI", f"Extracting dialogue from {p.name} with Whisper...", 30)
 
-    logger.info(f"Transcribing local file with Whisper: {p}")
-    whisper_prompt = "Transkrip video percakapan dalam Bahasa Indonesia atau English."
-    result = whisper_model.transcribe(
-        str(p),
-        word_timestamps=True,
-        fp16=False,
-        verbose=False,
-        initial_prompt=whisper_prompt
+    logger.info(f"Transcribing local file with Whisper: {p} (target_language={target_language})")
+    whisper_prompt = (
+        "Transkrip video percakapan dalam Bahasa Indonesia." if target_language == "id"
+        else "Video dialogue transcript in English." if target_language == "en"
+        else "Transkrip video percakapan dalam Bahasa Indonesia atau English."
     )
+    transcribe_kwargs = {
+        "word_timestamps": True,
+        "fp16": False,
+        "verbose": False,
+        "initial_prompt": whisper_prompt,
+    }
+    if target_language in ("id", "en"):
+        transcribe_kwargs["language"] = target_language
+
+    result = whisper_model.transcribe(str(p), **transcribe_kwargs)
     
     segments = result.get("segments", [])
     transcript_lines = []

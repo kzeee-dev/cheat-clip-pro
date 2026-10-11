@@ -52,6 +52,7 @@ from backend.utils.proxy import get_proxy_url
 from backend.utils.sse import _sse
 from backend.utils.text import (
     detect_transcript_language,
+    validate_transcript_language,
     extract_video_id,
     lowercase_hashtags_in_string,
     parse_manual_subtitles,
@@ -383,13 +384,20 @@ async def analyze_video(request: AnalyzeRequest):
                     transcript_lines = parse_manual_subtitles(request.subtitles, duration)
                     if not transcript_lines:
                         raise Exception("Custom subtitles parsed into empty array.")
+                    check_man = validate_transcript_language(transcript_lines, title=title)
+                    if not check_man['is_supported']:
+                        yield _sse({
+                            "error": f"Bahasa subtitle tidak didukung: terdeteksi {check_man['name']}. Cheat Clip Pro hanya memproses bahasa Indonesia dan Inggris.",
+                            "status": 400
+                        })
+                        return
                     yield _sse({
                         "step": 3,
                         "step_progress": 100,
                         "overall_progress": 70,
                         "stage": "Subtitles Ready",
-                        "detail": f"Custom subtitles parsed — {len(transcript_lines)} timestamped lines loaded.",
-                        "message": f"Custom subtitles parsed — {len(transcript_lines)} lines loaded successfully."
+                        "detail": f"Custom subtitles parsed — {len(transcript_lines)} timestamped lines loaded ({check_man['name']}).",
+                        "message": f"Custom subtitles parsed — {len(transcript_lines)} lines loaded successfully ({check_man['name']})."
                     })
                 except Exception as e:
                     yield _sse({"error": f"Failed to parse manual subtitles: {str(e)}", "status": 400})
@@ -447,13 +455,24 @@ async def analyze_video(request: AnalyzeRequest):
                             })
                             return
 
+                    check_up = validate_transcript_language(transcript_lines, title=title)
+                    if not check_up['is_supported']:
+                        yield _sse({
+                            "error": (
+                                f"Video ini terdeteksi menggunakan percakapan dalam bahasa {check_up['name']}. "
+                                "Cheat Clip Pro difokuskan khusus untuk video dalam Bahasa Indonesia dan Bahasa Inggris saja."
+                            ),
+                            "status": 400
+                        })
+                        return
+
                     yield _sse({
                         "step": 3,
                         "step_progress": 100,
                         "overall_progress": 70,
                         "stage": "Dialogue Transcribed",
-                        "detail": f"Whisper speech-to-text complete — {len(transcript_lines)} timestamped dialogue sentences ready.",
-                        "message": f"Whisper transcribed {len(transcript_lines)} dialogue segments successfully."
+                        "detail": f"Whisper speech-to-text complete ({check_up['name']}) — {len(transcript_lines)} timestamped dialogue sentences ready.",
+                        "message": f"Whisper transcribed {len(transcript_lines)} dialogue segments successfully ({check_up['name']})."
                     })
                 except Exception as e:
                     if is_mock:
@@ -488,6 +507,7 @@ async def analyze_video(request: AnalyzeRequest):
             })
 
             channel = ""
+            expected_video_lang = None
             try:
                 metadata = await asyncio.to_thread(fetch_video_metadata, canonical_url, request.proxy, request.cookies)
                 title    = metadata["title"]
@@ -496,6 +516,11 @@ async def analyze_video(request: AnalyzeRequest):
                 heatmap  = metadata.get("heatmap") or []
                 is_live  = metadata.get("is_live", False)
                 live_status = metadata.get("live_status", "not_live")
+                audio_lang_raw = (metadata.get("audio_language") or "").lower().strip()
+                if audio_lang_raw in ("id", "in"):
+                    expected_video_lang = "id"
+                elif audio_lang_raw == "en":
+                    expected_video_lang = "en"
                 yield _sse({
                     "step": 1,
                     "step_progress": 100,
@@ -569,13 +594,27 @@ async def analyze_video(request: AnalyzeRequest):
                     transcript_lines = parse_manual_subtitles(request.subtitles, duration)
                     if not transcript_lines:
                         raise Exception("Custom subtitles parsed into empty array.")
+                    check_man = validate_transcript_language(transcript_lines, expected_video_lang=expected_video_lang, title=title)
+                    if not check_man['is_supported']:
+                        yield _sse({
+                            "error": f"Bahasa subtitle tidak didukung: terdeteksi {check_man['name']}. Cheat Clip Pro hanya memproses bahasa Indonesia dan Inggris.",
+                            "status": 400
+                        })
+                        return
+                    if check_man['mismatch_detected']:
+                        yield _sse({
+                            "error": check_man['error_message'],
+                            "status": 400
+                        })
+                        return
+
                     yield _sse({
                         "step": 3,
                         "step_progress": 100,
                         "overall_progress": 70,
                         "stage": "Subtitles Ready",
-                        "detail": f"Custom subtitles parsed — {len(transcript_lines)} timestamped lines loaded.",
-                        "message": f"Custom subtitles parsed — {len(transcript_lines)} lines loaded successfully."
+                        "detail": f"Custom subtitles parsed — {len(transcript_lines)} timestamped lines loaded ({check_man['name']}).",
+                        "message": f"Custom subtitles parsed — {len(transcript_lines)} lines loaded successfully ({check_man['name']})."
                     })
                 except Exception as e:
                     yield _sse({"error": f"Failed to parse manual subtitles: {str(e)}", "status": 400})
@@ -606,7 +645,7 @@ async def analyze_video(request: AnalyzeRequest):
 
                 try:
                     task = asyncio.create_task(
-                        asyncio.to_thread(fetch_transcript, video_id, request.proxy, progress_callback, request.cookies)
+                        asyncio.to_thread(fetch_transcript, video_id, request.proxy, progress_callback, request.cookies, expected_video_lang)
                     )
 
                     while not task.done():
@@ -620,13 +659,20 @@ async def analyze_video(request: AnalyzeRequest):
                         yield _sse(progress_queue.get_nowait())
 
                     transcript_lines = await task
+                    # Validate that fetched transcript is strictly ID or EN and matches authentic spoken audio
+                    val = validate_transcript_language(transcript_lines, expected_video_lang=expected_video_lang, title=title)
+                    if not val['is_supported'] or val['mismatch_detected']:
+                        logger.warning(f"Fetched YouTube transcript rejected by language validator: {val.get('error_message')}. Discarding to trigger Whisper AI fallback...")
+                        transcript_lines = []
+                        raise Exception(f"Transcript language validation rejected: {val.get('error_message')}")
+
                     yield _sse({
                         "step": 3,
                         "step_progress": 100,
                         "overall_progress": 70,
                         "stage": "Subtitles Ready",
-                        "detail": f"Subtitles loaded — {len(transcript_lines)} dialogue sentences with timestamps ready.",
-                        "message": f"Subtitles loaded — {len(transcript_lines)} lines parsed successfully."
+                        "detail": f"Subtitles loaded ({val['name']}) — {len(transcript_lines)} dialogue sentences with timestamps ready.",
+                        "message": f"Subtitles loaded ({val['name']}) — {len(transcript_lines)} lines parsed successfully."
                     })
                 except Exception as e:
                     if is_mock:
@@ -724,7 +770,7 @@ async def analyze_video(request: AnalyzeRequest):
 
                             try:
                                 w_task = asyncio.create_task(
-                                    asyncio.to_thread(transcribe_local_video_file, audio_path, whisper_trans_progress)
+                                    asyncio.to_thread(transcribe_local_video_file, audio_path, whisper_trans_progress, expected_video_lang)
                                 )
                                 while not w_task.done():
                                     try:
@@ -741,6 +787,17 @@ async def analyze_video(request: AnalyzeRequest):
                                 transcript_lines = []
 
                             if transcript_lines:
+                                w_check = validate_transcript_language(transcript_lines, expected_video_lang=expected_video_lang, title=title)
+                                if not w_check['is_supported']:
+                                    yield _sse({
+                                        "error": (
+                                            f"Audio video ini terdeteksi menggunakan percakapan dalam bahasa {w_check['name']}. "
+                                            "Cheat Clip Pro difokuskan khusus untuk video dalam Bahasa Indonesia dan Bahasa Inggris saja."
+                                        ),
+                                        "status": 400
+                                    })
+                                    return
+
                                 if duration <= 0.0:
                                     try:
                                         audio_meta = await asyncio.to_thread(get_video_file_metadata, audio_path)
@@ -762,8 +819,8 @@ async def analyze_video(request: AnalyzeRequest):
                                     "step_progress": 100,
                                     "overall_progress": 70,
                                     "stage": "Subtitles Ready",
-                                    "detail": f"Whisper speech-to-text complete — {len(transcript_lines)} dialogue sentences with timestamps ready.",
-                                    "message": f"Whisper transcribed {len(transcript_lines)} lines parsed successfully."
+                                    "detail": f"Whisper speech-to-text complete ({w_check['name']}) — {len(transcript_lines)} dialogue sentences with timestamps ready.",
+                                    "message": f"Whisper transcribed {len(transcript_lines)} lines parsed successfully ({w_check['name']})."
                                 })
                             else:
                                 msg = e.detail if isinstance(e, HTTPException) else str(e)
@@ -944,7 +1001,24 @@ async def analyze_video(request: AnalyzeRequest):
 
         # ── Step 4: Build prompt & Detect Language ─────────────────────────────
         detected_lang = detect_transcript_language(enriched_transcript, title)
+        if not detected_lang.get('is_supported', True):
+            yield _sse({
+                "error": (
+                    f"Transkrip video terdeteksi dalam bahasa {detected_lang.get('name')}. "
+                    "Cheat Clip Pro difokuskan khusus untuk video dalam Bahasa Indonesia dan Bahasa Inggris saja."
+                ),
+                "status": 400
+            })
+            return
+
         lang_code = detected_lang.get('code', 'en')
+        if lang_code not in ('id', 'en'):
+            yield _sse({
+                "error": f"Bahasa transkrip ({lang_code}) tidak valid. Cheat Clip Pro hanya memproses bahasa Indonesia dan Inggris.",
+                "status": 400
+            })
+            return
+
         lang_name = detected_lang.get('name', 'English')
         logger.info(f"Detected video language: {lang_name} ({lang_code}) - confidence {detected_lang.get('confidence', 0.0)}")
 
@@ -1337,18 +1411,6 @@ async def analyze_video(request: AnalyzeRequest):
                         "caption_suggestion": f"Momen terbaik dari video: {preview} #viral #trending",
                         "hashtag_suggestion": "#viral #shorts #trending"
                     })
-                elif lang_code == 'es':
-                    fallback_clips_list.append({
-                        "title": f"Momento Destacado #{i+1}",
-                        "start_time": st,
-                        "end_time": et,
-                        "hook_time": st,
-                        "virality_score": max(70, int(95 - i * 5)),
-                        "key_quotes": [seg_text[:80]] if seg_text else [],
-                        "title_suggestion": f"Momento Imperdible #{i+1}",
-                        "caption_suggestion": f"Momento clave del video: {preview} #viral #trending",
-                        "hashtag_suggestion": "#viral #shorts #trending"
-                    })
                 else:
                     fallback_clips_list.append({
                         "title": f"Key Highlight #{i+1}",
@@ -1365,8 +1427,6 @@ async def analyze_video(request: AnalyzeRequest):
             if not analysis_data.get('summary'):
                 if lang_code == 'id':
                     analysis_data['summary'] = f"Analisis video \"{title}\" menemukan {len(fallback_clips_list)} segmen cuplikan pilihan. #viral #highlights"
-                elif lang_code == 'es':
-                    analysis_data['summary'] = f"Análisis de \"{title}\" identificando {len(fallback_clips_list)} segmentos clave. #viral #highlights"
                 else:
                     analysis_data['summary'] = f"Analysis of \"{title}\" identifying {len(fallback_clips_list)} key segments. #viral #highlights"
 

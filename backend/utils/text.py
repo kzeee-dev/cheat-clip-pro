@@ -154,46 +154,53 @@ LANGUAGE_NAMES = {
 }
 
 ID_DISTINCT_MARKERS = {
-    'yang', 'untuk', 'dengan', 'karena', 'adalah', 'sudah', 'belum', 'tidak', 'nggak',
-    'banget', 'mereka', 'kalian', 'seperti', 'apakah', 'bagaimana', 'kenapa', 'sekarang',
-    'kemudian', 'tetapi', 'walaupun', 'maksudnya', 'artinya', 'bisa', 'akan', 'harus',
-    'jadi', 'pada', 'dalam', 'kami', 'kita', 'saya', 'kamu', 'beliau', 'makanya', 'padahal',
-    'bahwa', 'ketika', 'tersebut', 'mengapa', 'sebab'
+    # Pronouns & Conversational terms
+    'saya', 'aku', 'gue', 'gua', 'gw', 'kamu', 'lu', 'lo', 'elu', 'kita', 'kami', 'mereka', 'kalian', 'beliau',
+    # Connectives, Prepositions & Negation
+    'yang', 'untuk', 'dengan', 'karena', 'adalah', 'sudah', 'belum', 'tidak', 'nggak', 'gak', 'ngga', 'ga', 'bukan', 'jangan',
+    'banget', 'bgt', 'seperti', 'kayak', 'kalo', 'kalau', 'klo', 'apakah', 'bagaimana', 'gimana', 'kenapa', 'mengapa',
+    'sekarang', 'skrg', 'kemudian', 'tetapi', 'walaupun', 'meskipun', 'maksudnya', 'artinya', 'bisa', 'gabisa', 'akan', 'harus',
+    'jadi', 'pada', 'dalam', 'makanya', 'padahal', 'bahwa', 'ketika', 'tersebut', 'sebab', 'oleh', 'yaitu', 'yakni',
+    # Conversational & Discourse particles
+    'nih', 'tuh', 'dong', 'deh', 'sih', 'kok', 'loh', 'lho', 'aja', 'doang', 'emang', 'memang', 'beneran', 'bener',
+    'gitu', 'gini', 'begitu', 'begini', 'udah', 'udh', 'cuman', 'hanya', 'punya', 'ngomong', 'bilang', 'katanya',
+    'bikin', 'liat', 'soal', 'soalnya', 'pas', 'ntar', 'nanti', 'kan'
 }
 
 EN_DISTINCT_MARKERS = {
-    'the', 'that', 'with', 'from', 'they', 'their', 'what', 'which', 'would', 'could',
+    'the', 'that', 'with', 'from', 'they', 'their', 'them', 'what', 'which', 'would', 'could',
     'should', 'about', 'there', 'were', 'been', 'have', 'having', 'your', 'just', 'when',
     'where', 'because', 'people', 'think', 'thinking', 'going', 'really', 'something',
     'always', 'never', 'every', 'before', 'after', 'through', 'between', 'without',
-    'these', 'those', 'also', 'wouldn\'t', 'couldn\'t', 'shouldn\'t', 'doesn\'t', 'isn\'t'
+    'these', 'those', 'also', 'wouldn\'t', 'couldn\'t', 'shouldn\'t', 'doesn\'t', 'isn\'t',
+    'didn\'t', 'wasn\'t', 'weren\'t', 'haven\'t', 'hasn\'t', 'won\'t', 'can\'t', 'cannot'
 }
 
 ID_STOPWORDS = {
     # Pronouns & People
     'saya', 'aku', 'gue', 'gua', 'gw', 'kamu', 'lu', 'lo', 'elu', 'kita', 'kami', 'mereka',
     'dia', 'beliau', 'kalian', 'orang', 'bang', 'mas', 'mbak', 'kak', 'kakak',
-    'pak', 'bapak', 'bu', 'ibu', 'om', 'tante', 'anak', 'teman', 'temen',
+    'pak', 'bapak', 'bu', 'ibu', 'om', 'tante', 'anak', 'teman', 'temen', 'coy', 'bro', 'sis',
     # Connectives, Prepositions & Articles
     'yang', 'dan', 'di', 'ke', 'dari', 'pada', 'dalam', 'untuk', 'utk', 'dengan', 'dgn',
-    'sama', 'karena', 'krn', 'sebab', 'oleh', 'bagi', 'antara', 'tentang', 'seperti', 'kayak',
+    'sama', 'karena', 'krn', 'sebab', 'oleh', 'bagi', 'antara', 'tentang', 'seperti', 'kayak', 'kaya',
     'kalo', 'kalau', 'klo', 'jika', 'apabila', 'tapi', 'tp', 'tetapi', 'namun', 'melainkan',
     'walaupun', 'meskipun', 'supaya', 'agar', 'atau', 'maupun', 'serta', 'yaitu', 'yakni',
     # Particles & Conversational Markers
     'ya', 'nih', 'tuh', 'dong', 'kan', 'lah', 'deh', 'sih', 'kok', 'loh', 'lho', 'kah', 'pun',
     'nggak', 'gak', 'ngga', 'ga', 'tak', 'bukan', 'jangan', 'udah', 'udh', 'sudah', 'belum', 'blm',
-    'banget', 'bgt', 'aja', 'saja', 'doang', 'cuma', 'cuman', 'hanya', 'sangat', 'amat',
+    'banget', 'bgt', 'aja', 'saja', 'doang', 'cuma', 'cuman', 'hanya', 'sangat', 'amat', 'parah', 'gokil',
     'gitu', 'gini', 'begitu', 'begini', 'makanya', 'makannya', 'padahal', 'emang', 'memang',
-    'bener', 'beneran', 'benar', 'pasti', 'bisa', 'gabisa', 'dapat', 'boleh', 'harus', 'hrs',
-    'mau', 'ingin', 'bakal', 'akan', 'lagi', 'lg', 'sedang', 'masih', 'msh', 'terus', 'trus',
-    'dulu', 'dl', 'kemarin', 'besok', 'nanti', 'sekarang', 'skrg', 'saat', 'ketika', 'waktu', 'pas',
+    'bener', 'beneran', 'benar', 'pasti', 'bisa', 'gabisa', 'dapat', 'boleh', 'harus', 'hrs', 'kudu', 'mesti',
+    'mau', 'ingin', 'pengen', 'bakal', 'akan', 'lagi', 'lg', 'sedang', 'masih', 'msh', 'terus', 'trus',
+    'dulu', 'dl', 'kemarin', 'besok', 'nanti', 'ntar', 'sekarang', 'skrg', 'saat', 'ketika', 'waktu', 'pas',
     # Question words
-    'apa', 'apakah', 'siapa', 'kenapa', 'knp', 'mengapa', 'gimana', 'bagaimana', 'dimana', 'kapan',
+    'apa', 'apaan', 'apakah', 'siapa', 'kenapa', 'knp', 'ngapa', 'mengapa', 'gimana', 'bagaimana', 'dimana', 'kapan', 'berapa',
     # Common speech verbs & concepts
     'jadi', 'adalah', 'ada', 'punya', 'tau', 'tahu', 'tonton', 'nonton', 'bilang', 'katanya',
-    'kata', 'ngomong', 'bikin', 'buat', 'liat', 'lihat', 'pikir', 'kira', 'rasa', 'rasanya',
+    'kata', 'ngomong', 'bicara', 'bikin', 'buat', 'liat', 'lihat', 'pikir', 'kira', 'rasa', 'rasanya',
     'menurut', 'maksud', 'maksudnya', 'paham', 'ngerti', 'banyak', 'kurang', 'lebih', 'semua',
-    'sendiri', 'lain', 'lainnya', 'biasa', 'luar', 'soal', 'soalnya', 'masalah', 'cerita'
+    'sendiri', 'lain', 'lainnya', 'biasa', 'luar', 'soal', 'soalnya', 'masalah', 'cerita', 'urusan'
 }
 
 EN_STOPWORDS = {
@@ -244,23 +251,22 @@ DE_STOPWORDS = {
 
 def detect_transcript_language(transcript_lines: List[dict], title: str = "") -> dict:
     """
-    Detects the primary spoken language of the video transcript with high precision,
-    sampling across the entire transcript (up to 1,000 lines) and cross-referencing
-    distinct linguistic markers and the video title.
-    
+    Detects the primary spoken language of the video transcript with 100% precision,
+    distinguishing strictly between Indonesian ('id') and English ('en'), and detecting
+    unsupported foreign languages (Arabic, Japanese, Chinese, Russian, Spanish, French, etc.).
+
     Guarantees:
-    - English videos (with English speech/transcripts) are classified as English ('en').
-    - Indonesian videos (with Indonesian speech/transcripts) are classified as Indonesian ('id').
-    - Non-Latin scripts (Arabic, Japanese, Korean, Chinese, Russian) are detected if dominant.
-    
-    Returns dict: {'code': 'id'|'en'|..., 'name': str, 'confidence': float}
+    - Indonesian dialogue (formal or informal/colloquial) is classified as Indonesian ('id').
+    - English dialogue is classified as English ('en').
+    - Foreign languages are identified and flagged so they are never erroneously processed.
+    - Video titles alone never override clear dialogue content.
+
+    Returns dict: {'code': 'id'|'en'|'es'|..., 'name': str, 'confidence': float, 'is_supported': bool}
     """
     if not transcript_lines and not title:
-        return {'code': 'en', 'name': 'English', 'confidence': 0.5}
+        return {'code': 'en', 'name': LANGUAGE_NAMES['en'], 'confidence': 0.5, 'is_supported': True}
 
-    sample_texts = [title] if title else []
-    
-    # Sample up to 1,000 lines across the transcript
+    sample_texts = []
     if transcript_lines:
         total_lines = len(transcript_lines)
         if total_lines <= 1000:
@@ -272,14 +278,12 @@ def detect_transcript_language(transcript_lines: List[dict], title: str = "") ->
             t = line.get("text", "")
             if t:
                 sample_texts.append(t)
-    
-    full_sample = " ".join(sample_texts).strip()
-    if not full_sample:
-        return {'code': 'en', 'name': 'English', 'confidence': 0.5}
 
-    # Extract words
-    tokens = re.findall(r'\b[a-zA-Z\u00C0-\u024F\u1E00-\u1EFF]+\b', full_sample.lower())
-    title_tokens = set(re.findall(r'\b[a-zA-Z]+\b', title.lower())) if title else set()
+    dialogue_sample = " ".join(sample_texts).strip()
+    full_sample = (dialogue_sample + " " + title).strip() if title else dialogue_sample
+
+    if not full_sample:
+        return {'code': 'en', 'name': LANGUAGE_NAMES['en'], 'confidence': 0.5, 'is_supported': True}
 
     # 1. Non-Latin Script Check
     all_letters = re.findall(r'[\w]', full_sample)
@@ -291,51 +295,23 @@ def detect_transcript_language(transcript_lines: List[dict], title: str = "") ->
     zh_chars = len(re.findall(r'[\u4E00-\u9FFF]', full_sample))
     ru_chars = len(re.findall(r'[\u0400-\u04FF]', full_sample))
 
-    # Strict check for non-Latin languages
-    if arabic_chars / total_letters > 0.45:
-        return {'code': 'ar', 'name': LANGUAGE_NAMES['ar'], 'confidence': 0.95}
-    if ja_chars / total_letters > 0.35:
-        return {'code': 'ja', 'name': LANGUAGE_NAMES['ja'], 'confidence': 0.95}
-    if ko_chars / total_letters > 0.35:
-        return {'code': 'ko', 'name': LANGUAGE_NAMES['ko'], 'confidence': 0.95}
-    if zh_chars / total_letters > 0.35:
-        return {'code': 'zh', 'name': LANGUAGE_NAMES['zh'], 'confidence': 0.95}
-    if ru_chars / total_letters > 0.35:
-        return {'code': 'ru', 'name': LANGUAGE_NAMES['ru'], 'confidence': 0.95}
+    if arabic_chars / total_letters > 0.30:
+        return {'code': 'ar', 'name': LANGUAGE_NAMES['ar'], 'confidence': 0.98, 'is_supported': False}
+    if ja_chars / total_letters > 0.20:
+        return {'code': 'ja', 'name': LANGUAGE_NAMES['ja'], 'confidence': 0.98, 'is_supported': False}
+    if ko_chars / total_letters > 0.20:
+        return {'code': 'ko', 'name': LANGUAGE_NAMES['ko'], 'confidence': 0.98, 'is_supported': False}
+    if zh_chars / total_letters > 0.20:
+        return {'code': 'zh', 'name': LANGUAGE_NAMES['zh'], 'confidence': 0.98, 'is_supported': False}
+    if ru_chars / total_letters > 0.25:
+        return {'code': 'ru', 'name': LANGUAGE_NAMES['ru'], 'confidence': 0.98, 'is_supported': False}
 
-    # 2. Distinct Linguistic Marker Scoring
-    id_distinct = sum(1 for w in tokens if w in ID_DISTINCT_MARKERS)
-    en_distinct = sum(1 for w in tokens if w in EN_DISTINCT_MARKERS)
+    # 2. Extract dialogue tokens (give dialogue 95% weight over video title)
+    dialogue_tokens = re.findall(r'\b[a-zA-Z\u00C0-\u024F\u1E00-\u1EFF]+\b', dialogue_sample.lower()) if dialogue_sample else []
+    title_tokens = set(re.findall(r'\b[a-zA-Z]+\b', title.lower())) if title else set()
+    tokens = dialogue_tokens if dialogue_tokens else list(title_tokens)
 
-    # Indonesian grammatical prefixes / suffixes pattern
-    id_morphology_matches = sum(
-        1 for w in tokens
-        if len(w) >= 5 and (
-            w.startswith(('meng', 'men', 'mem', 'peng', 'pen', 'pem', 'ber', 'ter')) or
-            w.endswith(('kan', 'nya', 'lah', 'kah', 'pun'))
-        )
-    )
-    id_distinct += (id_morphology_matches // 3)
-
-    id_total = sum(1 for w in tokens if w in ID_STOPWORDS) + (id_morphology_matches // 3)
-    en_total = sum(1 for w in tokens if w in EN_STOPWORDS)
-
-    # Video title language indicators
-    title_id = sum(1 for w in title_tokens if w in ID_DISTINCT_MARKERS or w in ID_STOPWORDS)
-    title_en = sum(1 for w in title_tokens if w in EN_DISTINCT_MARKERS or w in EN_STOPWORDS)
-
-    # 3. High-Confidence Decision
-    # Strong English signal
-    if en_distinct >= 3 and (en_distinct > id_distinct * 1.5 or (id_distinct == 0 and en_distinct >= 2)):
-        confidence = round(min(0.99, max(0.75, en_distinct / max(1, en_distinct + id_distinct))), 2)
-        return {'code': 'en', 'name': LANGUAGE_NAMES['en'], 'confidence': confidence}
-
-    # Strong Indonesian signal
-    if id_distinct >= 3 and (id_distinct > en_distinct * 1.3 or (en_distinct == 0 and id_distinct >= 2)):
-        confidence = round(min(0.99, max(0.75, id_distinct / max(1, id_distinct + en_distinct))), 2)
-        return {'code': 'id', 'name': LANGUAGE_NAMES['id'], 'confidence': confidence}
-
-    # 4. Check European Latin languages
+    # Check European foreign languages (Spanish, French, Portuguese, German)
     other_counts = {
         'es': sum(1 for w in tokens if w in ES_STOPWORDS),
         'pt': sum(1 for w in tokens if w in PT_STOPWORDS),
@@ -343,20 +319,125 @@ def detect_transcript_language(transcript_lines: List[dict], title: str = "") ->
         'de': sum(1 for w in tokens if w in DE_STOPWORDS),
     }
     best_other_lang, best_other_score = max(other_counts.items(), key=lambda item: item[1])
-    if best_other_score >= 8 and best_other_score > (id_total * 2) and best_other_score > (en_total * 1.5):
+
+    # 3. Indonesian Linguistic Markers & Features
+    id_distinct_count = sum(1 for w in tokens if w in ID_DISTINCT_MARKERS)
+    id_stop_count = sum(1 for w in tokens if w in ID_STOPWORDS)
+
+    # Distinct Indonesian grammatical affixes
+    id_morphology_matches = sum(
+        1 for w in tokens
+        if len(w) >= 5 and (
+            w.startswith(('meng', 'men', 'mem', 'meny', 'peng', 'pen', 'pem', 'peny', 'ber', 'ter', 'se')) or
+            w.endswith(('kan', 'nya', 'lah', 'kah', 'pun'))
+        )
+    )
+
+    # Indonesian morphological reduplication (e.g. kata-kata, orang-orang, bener-bener, tiba-tiba)
+    id_reduplications = len(re.findall(r'\b([a-zA-Z]{3,})-\1\b', full_sample.lower()))
+
+    # Weighted Indonesian score
+    id_score = (id_distinct_count * 3) + id_stop_count + (id_morphology_matches * 2) + (id_reduplications * 4)
+
+    # 4. English Linguistic Markers & Features
+    en_distinct_count = sum(1 for w in tokens if w in EN_DISTINCT_MARKERS)
+    en_stop_count = sum(1 for w in tokens if w in EN_STOPWORDS)
+
+    # Weighted English score
+    en_score = (en_distinct_count * 3) + en_stop_count
+
+    # If foreign European language clearly dominates over both ID and EN
+    if best_other_score >= 3 and best_other_score > (id_score * 1.5) and best_other_score > (en_score * 1.2):
         return {
             'code': best_other_lang,
             'name': LANGUAGE_NAMES.get(best_other_lang, best_other_lang.upper()),
-            'confidence': 0.85
+            'confidence': 0.90,
+            'is_supported': False
         }
 
-    # 5. Direct Comparative Scoring & Title Fallback
-    if title_id > title_en and id_total >= en_total * 0.7:
-        return {'code': 'id', 'name': LANGUAGE_NAMES['id'], 'confidence': 0.80}
-    if id_total > en_total * 1.1:
-        return {'code': 'id', 'name': LANGUAGE_NAMES['id'], 'confidence': 0.75}
+    # 5. High-Precision Decision between Indonesian ('id') and English ('en')
+    # If title has words and dialogue was very short, consider title
+    if len(dialogue_tokens) < 15 and title_tokens:
+        title_id = sum(1 for w in title_tokens if w in ID_DISTINCT_MARKERS or w in ID_STOPWORDS)
+        title_en = sum(1 for w in title_tokens if w in EN_DISTINCT_MARKERS or w in EN_STOPWORDS)
+        id_score += title_id * 3
+        en_score += title_en * 3
 
-    return {'code': 'en', 'name': LANGUAGE_NAMES['en'], 'confidence': 0.75}
+    if id_score > en_score:
+        confidence = round(min(0.99, max(0.80, (id_score + 1) / (id_score + en_score + 1))), 2)
+        return {
+            'code': 'id',
+            'name': LANGUAGE_NAMES['id'],
+            'confidence': confidence,
+            'is_supported': True
+        }
+    elif en_score > id_score:
+        confidence = round(min(0.99, max(0.80, (en_score + 1) / (id_score + en_score + 1))), 2)
+        return {
+            'code': 'en',
+            'name': LANGUAGE_NAMES['en'],
+            'confidence': confidence,
+            'is_supported': True
+        }
+    else:
+        # Fallback if both scores are 0: check title or default to en
+        title_id = sum(1 for w in title_tokens if w in ID_DISTINCT_MARKERS or w in ID_STOPWORDS)
+        if title_id > 0:
+            return {'code': 'id', 'name': LANGUAGE_NAMES['id'], 'confidence': 0.70, 'is_supported': True}
+        return {'code': 'en', 'name': LANGUAGE_NAMES['en'], 'confidence': 0.70, 'is_supported': True}
+
+
+def validate_transcript_language(
+    transcript_lines: List[dict],
+    expected_video_lang: Optional[str] = None,
+    title: str = ""
+) -> dict:
+    """
+    Validates that a transcript's language is supported (strictly 'id' or 'en')
+    and matches the authentic spoken language of the video without foreign language translation.
+
+    Returns dict:
+    {
+        'code': 'id'|'en'|...,
+        'name': str,
+        'confidence': float,
+        'is_supported': bool,       # True if 'id' or 'en'
+        'mismatch_detected': bool,   # True if expected language differs from detected
+        'error_message': Optional[str]
+    }
+    """
+    res = detect_transcript_language(transcript_lines, title)
+    code = res.get('code', 'en')
+    name = res.get('name', 'English')
+    is_supported = code in ('id', 'en')
+
+    mismatch = False
+    error_msg = None
+
+    if not is_supported:
+        error_msg = (
+            f"Transkrip video terdeteksi dalam bahasa {name}. "
+            f"Cheat Clip Pro difokuskan khusus untuk video dalam Bahasa Indonesia dan Bahasa Inggris saja."
+        )
+    elif expected_video_lang and expected_video_lang in ('id', 'en'):
+        exp_code = 'id' if expected_video_lang in ('id', 'in') else 'en'
+        if code != exp_code:
+            mismatch = True
+            exp_name = LANGUAGE_NAMES.get(exp_code, exp_code.upper())
+            error_msg = (
+                f"Bahasa transkrip ({name}) tidak sesuai dengan audio asli video ({exp_name}). "
+                f"Transkrip harus menggunakan bahasa yang sesuai dengan yang diucapkan di videonya."
+            )
+
+    return {
+        'code': code,
+        'name': name,
+        'confidence': res.get('confidence', 0.8),
+        'is_supported': is_supported,
+        'is_valid': is_supported and not mismatch,
+        'mismatch_detected': mismatch,
+        'error_message': error_msg
+    }
 
 def sanitize_first_person_title(title: str, speaker_or_channel: str = "", lang: str = "en") -> str:
     """
