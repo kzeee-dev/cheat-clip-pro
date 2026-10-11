@@ -334,7 +334,8 @@ async def upload_watermark(file: UploadFile = File(...)):
     allowed = [".png", ".jpg", ".jpeg", ".webp", ".svg"]
     if ext not in allowed:
         raise HTTPException(status_code=400, detail=f"Unsupported image format. Allowed: {', '.join(allowed)}")
-    
+    #fix watermark image upload error
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     clean_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', file.filename)
     unique_name = f"wm_{uuid.uuid4().hex[:8]}_{clean_name}"
     save_path = UPLOADS_DIR / unique_name
