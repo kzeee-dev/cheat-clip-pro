@@ -12,6 +12,7 @@ import { extractAudioFromVideoClient } from './utils/audioExtractor';
 import { renderClipClientSide, triggerBrowserDownload } from './services/clientRenderer';
 import { renderClipWebCodecs, isWebCodecsGpuSupported } from './services/webcodecsRenderer';
 import { isMobileDevice, requestWakeLock, releaseWakeLock } from './utils/deviceUtils';
+import { LayoutMetricsSync } from './utils/layoutMetricsSync';
 import { useLanguage } from './locales';
 import { HackerApiKeyInput } from './components/HackerApiKeyInput';
 import {
@@ -5921,6 +5922,9 @@ Transcript:
             />
           </div>
         )}
+
+        {/* Viewport and Hardware Metrics Sync Pipeline */}
+        <LayoutMetricsSync />
 
         {/* Transcript Language Confirmation Notice Modal before Hack Clips */}
         {showLanguageConfirmModal && (
