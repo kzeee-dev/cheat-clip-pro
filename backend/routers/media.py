@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
 
 from backend.config import (
@@ -49,6 +49,7 @@ async def _save_uploaded_file_chunked(file: UploadFile, save_path: Path, max_byt
     total_written = 0
     chunk_size = 1024 * 1024  # 1 MB
     try:
+        save_path.parent.mkdir(parents=True, exist_ok=True)
         with open(save_path, "wb") as f:
             while chunk := await file.read(chunk_size):
                 total_written += len(chunk)
@@ -75,41 +76,55 @@ async def _save_uploaded_file_chunked(file: UploadFile, save_path: Path, max_byt
 
 
 @router.post("/api/upload-video")
-async def upload_video(file: UploadFile = File(...)):
+async def upload_video(
+    file: UploadFile = File(...),
+    client_duration: Optional[float] = Form(None),
+    client_width: Optional[int] = Form(None),
+    client_height: Optional[int] = Form(None),
+    original_filename: Optional[str] = Form(None),
+):
     """
-    Handles local video file uploads (.mp4, .mov, .mkv, .webm, .avi, etc.).
-    Extracts video metadata (duration, resolution, fps) and saves to uploads folder.
+    Handles local video or browser-extracted audio uploads (.mp4, .mov, .mkv, .webm, .avi, .wav, .mp3, etc.).
+    Extracts metadata and saves to uploads folder.
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
     
+    display_filename = original_filename or file.filename
     ext = os.path.splitext(file.filename)[1].lower()
-    allowed = [".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v", ".flv", ".wmv"]
+    allowed = [".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v", ".flv", ".wmv", ".wav", ".mp3", ".m4a", ".ogg", ".aac", ".flac"]
     if ext not in allowed:
-        raise HTTPException(status_code=400, detail=f"Unsupported video format. Allowed: {', '.join(allowed)}")
+        raise HTTPException(status_code=400, detail=f"Unsupported media format. Allowed: {', '.join(allowed)}")
     
-    clean_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', file.filename)
+    actual_ext = os.path.splitext(file.filename)[1].lower()
+    base_display = os.path.splitext(display_filename)[0]
+    clean_base = re.sub(r'[^a-zA-Z0-9_.-]', '_', base_display)
     unique_id = f"upload_{uuid.uuid4().hex[:10]}"
-    unique_name = f"{unique_id}_{clean_name}"
+    unique_name = f"{unique_id}_{clean_base}{actual_ext}"
     save_path = UPLOADS_DIR / unique_name
     
     try:
         bytes_written = await _save_uploaded_file_chunked(file, save_path, MAX_VIDEO_UPLOAD_BYTES)
         meta = await asyncio.to_thread(get_video_file_metadata, save_path)
-        logger.info(f"Uploaded video '{file.filename}' -> saved as '{unique_name}' ({meta.get('duration')}s, {meta.get('width')}x{meta.get('height')})")
+        
+        final_duration = meta.get("duration") or (client_duration if client_duration and client_duration > 0 else 0.0)
+        final_width = (client_width if client_width and client_width > 0 else meta.get("width")) or 1920
+        final_height = (client_height if client_height and client_height > 0 else meta.get("height")) or 1080
+        
+        logger.info(f"Uploaded media '{display_filename}' -> saved as '{unique_name}' ({final_duration}s, {final_width}x{final_height}, {bytes_written} bytes)")
         
         return {
             "success": True,
-            "video_id": unique_id,
-            "filename": file.filename,
+            "video_id": save_path.stem,
+            "unique_id": unique_id,
+            "filename": display_filename,
             "saved_name": unique_name,
             "file_path": str(save_path),
             "video_url": f"/api/video/{unique_name}",
-            "duration": meta.get("duration", 0.0),
-            "width": meta.get("width", 1920),
-            "height": meta.get("height", 1080),
-            "fps": meta.get("fps", 30.0),
-            "has_audio": meta.get("has_audio", True),
+            "duration": final_duration,
+            "width": final_width,
+            "height": final_height,
+            "has_audio": True,
             "size_bytes": bytes_written
         }
     except HTTPException:
@@ -133,7 +148,14 @@ def _find_video_file_on_disk(file_name: str) -> Optional[Path]:
     all_files: list[Path] = []
     for d in [UPLOADS_DIR, TEMP_DIR, EXPORTS_DIR]:
         if d.exists():
-            all_files.extend([f for f in d.iterdir() if f.is_file() and _is_safe_path(f)])
+            all_files.extend([
+                f for f in d.iterdir()
+                if f.is_file() and _is_safe_path(f) and not f.name.startswith("yt_audio_")
+            ])
+
+    # Prioritize real video files over raw audio / temp clips
+    video_exts = {".mp4", ".webm", ".mov", ".mkv", ".avi", ".m4v"}
+    all_files.sort(key=lambda f: (0 if f.suffix.lower() in video_exts else 1, -f.stat().st_size if f.exists() else 0))
 
     clean_lower = clean_name.lower()
     
@@ -183,7 +205,22 @@ def get_video_file(file_name: str, request: Request):
 
     file_size = file_path.stat().st_size
     ext = os.path.splitext(file_path.name)[1].lower()
-    media_type = "video/webm" if ext == ".webm" else "video/quicktime" if ext == ".mov" else "video/x-matroska" if ext == ".mkv" else "video/mp4"
+    if ext == ".webm":
+        media_type = "video/webm"
+    elif ext == ".mov":
+        media_type = "video/quicktime"
+    elif ext == ".mkv":
+        media_type = "video/x-matroska"
+    elif ext == ".avi":
+        media_type = "video/x-msvideo"
+    elif ext == ".wav":
+        media_type = "audio/wav"
+    elif ext == ".mp3":
+        media_type = "audio/mpeg"
+    elif ext in [".m4a", ".aac", ".ogg", ".flac"]:
+        media_type = f"audio/{ext[1:]}"
+    else:
+        media_type = "video/mp4"
 
     range_header = request.headers.get("range")
     if not range_header:
@@ -200,6 +237,7 @@ def get_video_file(file_name: str, request: Request):
             headers={
                 "Content-Length": str(file_size),
                 "Accept-Ranges": "bytes",
+                "Content-Type": media_type,
                 "Content-Disposition": f'inline; filename="{file_path.name}"'
             }
         )
@@ -240,6 +278,7 @@ def get_video_file(file_name: str, request: Request):
             "Content-Range": f"bytes {start}-{end}/{file_size}",
             "Accept-Ranges": "bytes",
             "Content-Length": str(content_length),
+            "Content-Type": media_type,
             "Content-Disposition": f'inline; filename="{file_path.name}"'
         }
     )
@@ -323,9 +362,11 @@ async def upload_watermark(file: UploadFile = File(...)):
     allowed = [".png", ".jpg", ".jpeg", ".webp", ".svg"]
     if ext not in allowed:
         raise HTTPException(status_code=400, detail=f"Unsupported image format. Allowed: {', '.join(allowed)}")
-    
+    #fix watermark image upload error
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     clean_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', file.filename)
     unique_name = f"wm_{uuid.uuid4().hex[:8]}_{clean_name}"
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     save_path = UPLOADS_DIR / unique_name
     
     try:
@@ -351,18 +392,28 @@ def get_watermark_file(file_name: str):
     file_path = UPLOADS_DIR / clean_name
     if not file_path.exists() or not _is_safe_path(file_path):
         raise HTTPException(status_code=404, detail="Watermark file not found")
-    media_type = "image/png" if clean_name.endswith(".png") else "image/jpeg" if (clean_name.endswith(".jpg") or clean_name.endswith(".jpeg")) else "image/webp"
+    media_type = (
+        "image/svg+xml" if clean_name.endswith(".svg")
+        else "image/png" if clean_name.endswith(".png")
+        else "image/jpeg" if (clean_name.endswith(".jpg") or clean_name.endswith(".jpeg"))
+        else "image/webp"
+    )
     return FileResponse(file_path, media_type=media_type, filename=clean_name)
 
 
 @router.get("/api/clip-frame")
-async def get_clip_frame(video_id: str, timestamp: float = 0.0, video_url: Optional[str] = None):
+async def get_clip_frame(
+    video_id: str,
+    timestamp: float = 0.0,
+    video_url: Optional[str] = None,
+    cookies: Optional[str] = None
+):
     """
     Returns an extracted real video frame at timestamp for the real video preview.
     Guarantees returning a real video frame, never a promotional thumbnail.
     """
     try:
-        frame_path = await asyncio.to_thread(extract_clip_frame, video_url or "", video_id, timestamp)
+        frame_path = await asyncio.to_thread(extract_clip_frame, video_url or "", video_id, timestamp, cookies)
         if frame_path and os.path.exists(frame_path):
             return FileResponse(frame_path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
     except Exception as e:
@@ -377,7 +428,8 @@ async def detect_face(
     timestamp: float = 0.0,
     video_url: Optional[str] = None,
     facecam_position: Optional[str] = "auto",
-    streamer_preset: Optional[str] = "none"
+    streamer_preset: Optional[str] = "none",
+    cookies: Optional[str] = None
 ):
     """
     Detects speaker face coordinates (cx, cy, w, h) on the video at timestamp.
@@ -396,7 +448,7 @@ async def detect_face(
     }
     try:
         # First try to extract or get the cached frame
-        frame_path = await asyncio.to_thread(extract_clip_frame, video_url or "", video_id, timestamp)
+        frame_path = await asyncio.to_thread(extract_clip_frame, video_url or "", video_id, timestamp, cookies)
         if frame_path and os.path.exists(frame_path):
             box = await asyncio.to_thread(
                 detect_speaker_face_box,
@@ -525,12 +577,17 @@ def list_available_fonts():
 
             key = font_family.lower()
             is_builtin = key in fonts_map and not fonts_map[key]["is_custom"]
-            fonts_map[key] = {
-                "name": font_family,
-                "is_custom": not is_builtin,
-                "filename": f.name,
-                "url": f"/api/font-file/{f.name}"
-            }
+            if is_builtin:
+                # Keep builtin fonts using Google Fonts / system fonts in frontend
+                fonts_map[key]["filename"] = f.name
+                fonts_map[key]["url"] = None
+            else:
+                fonts_map[key] = {
+                    "name": font_family,
+                    "is_custom": True,
+                    "filename": f.name,
+                    "url": f"/api/font-file/{f.name}"
+                }
 
     return {"success": True, "fonts": list(fonts_map.values())}
 

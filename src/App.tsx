@@ -5746,7 +5746,7 @@ Transcript:
                                 </div>
                               )}
 
-                              {/* Row 1: Primary Actions (Preview, Adjust Duration, Download) */}
+                              {/* Row 1: Primary Actions (Preview Clip on Left, Download Clip on Right) */}
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.6rem', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '0.75rem', gap: '0.5rem' }}>
                                 <button
                                   type="button"
@@ -5774,68 +5774,45 @@ Transcript:
                                   {t.results.previewClip}
                                 </button>
 
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                                  <button
-                                    type="button"
-                                    className="clip-dl-btn"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setTrimmerClip(clip);
-                                    }}
-                                    title={t.results.adjustDurationTooltip}
-                                    style={{
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '0.35rem',
-                                      color: '#facc15',
-                                      borderColor: 'rgba(250, 204, 21, 0.55)',
-                                      background: 'rgba(250, 204, 21, 0.08)'
-                                    }}
-                                  >
-                                    <Scissors size={13} />
-                                    <span>{t.results.adjustDuration}</span>
-                                  </button>
+                                {(() => {
+                                  const clipKey = `${clip.start_time}_${clip.end_time}`;
+                                  const clipDlState = clipDownloadStates[clipKey];
+                                  const isDl = clipDlState?.status === 'downloading';
+                                  const isReady = clipDlState?.status === 'ready';
 
-                                  {(() => {
-                                    const clipKey = `${clip.start_time}_${clip.end_time}`;
-                                    const clipDlState = clipDownloadStates[clipKey];
-                                    const isDl = clipDlState?.status === 'downloading';
-                                    const isReady = clipDlState?.status === 'ready';
-
-                                    return (
-                                      <button
-                                        type="button"
-                                        className={`clip-dl-btn ${isReady ? 'state-ready' : 'state-downloading'}`}
-                                        disabled={isDl}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleDownloadRawClip(clip, e);
-                                        }}
-                                        title={t.results.downloadRawClipTooltip}
-                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
-                                      >
-                                        {isDl ? (
-                                          <>
-                                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="spinner-icon" style={{ animation: 'spin 1s linear infinite' }}>
-                                              <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="8"></circle>
-                                            </svg>
-                                            <span>{t.results.downloadingRawClip}</span>
-                                          </>
-                                        ) : isReady ? (
-                                          <>
-                                            <CheckCircle2 size={13} />
-                                            <span>{t.results.downloadedRawClip}</span>
-                                          </>
-                                        ) : (
-                                          <>
-                                            <Download size={13} />
-                                            <span>{t.results.downloadRawClip}</span>
-                                          </>
-                                        )}
-                                      </button>
-                                    );
-                                  })()}
-                                </div>
+                                  return (
+                                    <button
+                                      type="button"
+                                      className={`clip-dl-btn ${isReady ? 'state-ready' : 'state-downloading'}`}
+                                      disabled={isDl}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setTrimmerClip(clip);
+                                      }}
+                                      title={t.results.downloadRawClipTooltip}
+                                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                                    >
+                                      {isDl ? (
+                                        <>
+                                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="spinner-icon" style={{ animation: 'spin 1s linear infinite' }}>
+                                            <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="8"></circle>
+                                          </svg>
+                                          <span>{t.results.downloadingRawClip}</span>
+                                        </>
+                                      ) : isReady ? (
+                                        <>
+                                          <CheckCircle2 size={13} />
+                                          <span>{t.results.downloadedRawClip}</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Download size={13} />
+                                          <span>{t.results.downloadRawClip}</span>
+                                        </>
+                                      )}
+                                    </button>
+                                  );
+                                })()}
                               </div>
 
                               {/* Row 2: Secondary Utilities (Copy Timestamp, Copy Details, Show Transcript) */}
@@ -6125,9 +6102,6 @@ Transcript:
           videoDuration={result?.duration || 0}
           transcript={result?.transcript}
           onClose={() => setTrimmerClip(null)}
-          onApply={(adjustedClip) => {
-            handleApplyAdjustedClipToResults(adjustedClip);
-          }}
           onDownload={async (adjustedClip) => {
             handleApplyAdjustedClipToResults(adjustedClip);
             await handleDownloadRawClip(adjustedClip);
@@ -6192,3 +6166,4 @@ Transcript:
     </>
   );
 }
+

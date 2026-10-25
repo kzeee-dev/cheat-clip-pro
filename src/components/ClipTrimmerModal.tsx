@@ -1538,23 +1538,6 @@ export const ClipTrimmerModal: React.FC<ClipTrimmerModalProps> = ({
 
             <button
               type="button"
-              onClick={() => {
-                onApply(getAdjustedClip());
-                onClose();
-              }}
-              disabled={isDownloading}
-              className="trimmer-download-btn"
-              style={{
-                background: '#eab308',
-                borderColor: '#facc15',
-                color: '#09090b'
-              }}
-            >
-              {t.trimmer.applyBtn}
-            </button>
-
-            <button
-              type="button"
               onClick={handleDownloadClick}
               disabled={isDownloading}
               className={`trimmer-download-btn ${downloadSuccess ? 'is-success' : ''}`}

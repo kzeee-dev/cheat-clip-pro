@@ -690,7 +690,6 @@ export const id: Translations = {
     downloadingBtn: "[..] MEMOTONG & MENGUNDUH...",
     downloadSuccessBtn: (start: string, end: string) => `[OK] TERUNDUH (${start} - ${end})`,
     resetBtn: "[↺] KEMBALIKAN KE ASLI",
-    applyBtn: "[OK] TERAPKAN",
     closeBtn: "Tutup",
     clipTitleLabel: "Judul Klip / Nama File:",
   },

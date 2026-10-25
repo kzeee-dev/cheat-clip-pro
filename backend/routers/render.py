@@ -116,6 +116,8 @@ async def retry_batch_rendering(
             raise HTTPException(status_code=400, detail="Batch is currently rendering. Please wait for the current clip to finish.")
 
     req = BATCH_REQUESTS[batch_id]
+    if body and body.cookies:
+        req.cookies = body.cookies
     indices_to_retry: List[int] = []
     if body and body.clip_indices:
         indices_to_retry = [i for i in body.clip_indices if 0 <= i < len(batch["clips"])]
@@ -235,10 +237,13 @@ def get_hardware_acceleration_status():
     """Returns detected GPU/CPU hardware acceleration options and recommendations."""
     support = detect_hardware_support()
     rec = support.get("recommended", "cpu")
+    gpu_name = support.get("gpu_name")
+    nvenc_sub = f"{gpu_name} (NVENC)" if (gpu_name and "geforce" in gpu_name.lower() or "rtx" in (gpu_name or "").lower() or "gtx" in (gpu_name or "").lower() or "nvidia" in (gpu_name or "").lower()) else "GeForce & RTX Hardware Acceleration"
     return {
         "status": "success",
         "active_default": ACTIVE_ENCODER_NAME,
         "recommended": rec,
+        "gpu_name": gpu_name,
         "support": support,
         "options": [
             {
@@ -250,7 +255,7 @@ def get_hardware_acceleration_status():
             {
                 "id": "nvenc",
                 "label": "NVIDIA NVENC",
-                "sub": "GeForce & RTX Hardware Acceleration",
+                "sub": nvenc_sub,
                 "available": support.get("nvenc", False),
             },
             {
