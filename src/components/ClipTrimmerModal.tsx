@@ -13,6 +13,7 @@ interface ClipTrimmerModalProps {
   videoDuration: number;
   transcript?: TranscriptLine[];
   onClose: () => void;
+  onApply: (adjustedClip: ViralClip) => void;
   onDownload: (adjustedClip: ViralClip) => Promise<void> | void;
 }
 
@@ -56,6 +57,7 @@ export const ClipTrimmerModal: React.FC<ClipTrimmerModalProps> = ({
   videoDuration,
   transcript = [],
   onClose,
+  onApply,
   onDownload,
 }) => {
   const { t } = useLanguage();
@@ -1524,7 +1526,7 @@ export const ClipTrimmerModal: React.FC<ClipTrimmerModalProps> = ({
             {t.trimmer.resetBtn}
           </button>
 
-          {/* Right: Close & Download Buttons */}
+          {/* Right: Close, Apply & Download Buttons */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
             <button
               type="button"

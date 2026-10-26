@@ -2178,6 +2178,19 @@ export default function App() {
 
   const handleApplyAdjustedClipToResults = (adjustedClip: ViralClip) => {
     if (result && result.clips && trimmerClip) {
+      const oldKey = `${trimmerClip.start_time}_${trimmerClip.end_time}`;
+      const newKey = `${adjustedClip.start_time}_${adjustedClip.end_time}`;
+
+      // Clip selection is keyed by its timestamps. Preserve the selected state
+      // when changing either boundary so the adjusted clip is still rendered.
+      setMarkedClips(prev => {
+        if (!prev[oldKey] || oldKey === newKey) return prev;
+        const next = { ...prev };
+        delete next[oldKey];
+        next[newKey] = true;
+        return next;
+      });
+
       setResult(prev => {
         if (!prev) return prev;
         return {

@@ -169,6 +169,8 @@ export const en = {
     downloadingRawClip: "SLICING CLIP...",
     downloadedRawClip: "DOWNLOADED",
     downloadRawClipTooltip: "Download clean 1080p clip segment without crop or subtitles",
+    adjustDuration: "ADJUST DURATION",
+    adjustDurationTooltip: "Adjust the clip start and end timestamps",
     videoSummary: "Video Summary",
     generatedClipsOverview: (count: number) => `Generated Clips Overview (${count})`,
     recommendedClips: "Recommended Clips",

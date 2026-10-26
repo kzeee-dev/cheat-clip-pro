@@ -172,6 +172,8 @@ export const id: Translations = {
     downloadingRawClip: "MEMOTONG KLIP...",
     downloadedRawClip: "TERUNDUH",
     downloadRawClipTooltip: "Unduh potongan klip bersih 1080p tanpa crop atau subtitle",
+    adjustDuration: "SESUAIKAN DURASI",
+    adjustDurationTooltip: "Sesuaikan timestamp mulai dan selesai klip",
     videoSummary: "Ringkasan Video",
     generatedClipsOverview: (count: number) => `Daftar Klip Dihasilkan (${count})`,
     recommendedClips: "Rekomendasi Klip Viral",
