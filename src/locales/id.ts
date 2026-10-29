@@ -23,6 +23,7 @@ export const id: Translations = {
   form: {
     sourceType: "Sumber Input",
     tabYoutube: "Video YouTube",
+    tabTwitch: "Video / Klip Twitch",
     tabGdrive: "Google Drive",
     tabUpload: "Unggah File Video",
     dropVideoTitle: "Tarik & lepas file video di sini atau klik untuk memilih",
@@ -33,6 +34,9 @@ export const id: Translations = {
     chooseVideoFile: "[+] Pilih File Video",
     localVideoNotice: "File video lokal akan ditranskrip secara otomatis menggunakan Whisper AI dan dianalisis untuk klip viral.",
     gdriveNotice: "Video Google Drive akan diunduh, ditranskrip secara otomatis menggunakan Whisper AI, dan dianalisis untuk klip viral.",
+    twitchNotice: "VOD Twitch akan ditranskrip secara otomatis menggunakan Whisper AI dan dianalisis untuk klip viral.",
+    twitchUrlLabel: "URL Video / Klip Twitch",
+    twitchUrlPlaceholder: "Tempel tautan Twitch di sini (misal: https://www.twitch.tv/videos/... atau clips.twitch.tv/...)",
     urlLabel: "URL Video YouTube",
     urlPlaceholder: "Tempel tautan video di sini (misal: https://www.youtube.com/watch?v=... atau shorts, youtu.be)",
     gdriveUrlLabel: "URL Video Google Drive",

@@ -19,6 +19,7 @@ from backend.config import (
     transcribe_clip_words,
 )
 from backend.schemas.render import RenderBatchRequest, RenderSettingsModel
+from backend.utils.text import is_twitch_url, extract_twitch_info, get_twitch_canonical_url, canonical_video_url
 
 RENDER_BATCHES: Dict[str, Dict[str, Any]] = {}
 BATCH_REQUESTS: Dict[str, RenderBatchRequest] = {}
@@ -582,6 +583,12 @@ async def process_batch_rendering(batch_id: str, request: RenderBatchRequest):
         elif request.video_id and (request.video_id.startswith("gdrive_") or request.video_id.startswith("upload_")):
             if not target_url.startswith("/api/video/"):
                 target_url = f"/api/video/{request.video_id}"
+        elif request.video_id and is_twitch_url(request.video_id):
+            tw_info = extract_twitch_info(request.video_id)
+            target_url = get_twitch_canonical_url(tw_info) if tw_info else request.video_id
+        elif target_url and is_twitch_url(target_url):
+            tw_info = extract_twitch_info(target_url)
+            target_url = get_twitch_canonical_url(tw_info) if tw_info else target_url
         elif not target_url:
             if request.video_id:
                 target_url = f"https://www.youtube.com/watch?v={request.video_id}"

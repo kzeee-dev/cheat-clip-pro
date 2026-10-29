@@ -16,6 +16,7 @@ import threading
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple, Union, Callable
 from PIL import Image, ImageDraw, ImageFont
+from backend.utils.text import is_twitch_url, extract_twitch_info, get_twitch_canonical_url, canonical_video_url
 
 logger = logging.getLogger("cheat-clip-pro.video-engine")
 
@@ -914,17 +915,26 @@ def download_clip_segment(
     # Guard: if it was a Google Drive or Upload request, never send to YouTube
     # Exception: if it was a YouTube audio cache file (e.g. /api/video/yt_audio_iLijjSEI_40.mp4), resolve back to original YouTube video
     yt_audio_match = re.search(r'yt_audio_([a-zA-Z0-9_-]{11})', clean_raw)
+    tw_audio_match = re.search(r'twitch_audio_(twitch_\d+|twitch_clip_[a-zA-Z0-9_-]+|\d+|[a-zA-Z0-9_-]+)', clean_raw)
     if yt_audio_match:
         yt_id = yt_audio_match.group(1)
         clean_url = f"https://www.youtube.com/watch?v={yt_id}"
         logger.info(f"Resolved cached audio reference '{clean_raw}' back to genuine YouTube stream: {clean_url}")
+    elif tw_audio_match or is_twitch_url(clean_raw):
+        tw_info = extract_twitch_info(clean_raw)
+        clean_url = get_twitch_canonical_url(tw_info) if tw_info else clean_raw
+        logger.info(f"Resolved Twitch reference '{clean_raw}' back to genuine Twitch stream: {clean_url}")
     elif "gdrive" in clean_raw.lower() or "upload_" in clean_raw.lower() or clean_raw.startswith("/api/video/"):
         raise RuntimeError(f"Source video file not found on disk for '{clean_raw}'. Please re-analyze the video.")
     else:
-        # Sanitize video URL for YouTube download
-        clean_url = video_url.strip()
-        if not clean_url.startswith("http"):
-            clean_url = f"https://www.youtube.com/watch?v={clean_url}"
+        # Sanitize video URL
+        if is_twitch_url(video_url):
+            tw_info = extract_twitch_info(video_url)
+            clean_url = get_twitch_canonical_url(tw_info) if tw_info else video_url.strip()
+        else:
+            clean_url = video_url.strip()
+            if not clean_url.startswith("http"):
+                clean_url = f"https://www.youtube.com/watch?v={clean_url}"
 
     t_start_fmt = format_section_time(start_time)
     t_end_fmt = format_section_time(end_time)
@@ -1187,7 +1197,10 @@ def download_full_raw_video(
         return str(output_path)
 
     clean_url = video_url.strip()
-    if not clean_url.startswith("http"):
+    if is_twitch_url(clean_url):
+        tw_info = extract_twitch_info(clean_url)
+        clean_url = get_twitch_canonical_url(tw_info) if tw_info else clean_url
+    elif not clean_url.startswith("http"):
         clean_url = f"https://www.youtube.com/watch?v={clean_url}"
 
     with ephemeral_cookies_file(cookies_content) as temp_cookies:
@@ -3542,7 +3555,14 @@ def extract_clip_frame(video_url: str, video_id: str, timestamp: float = 0.0, co
 
     # 2. Extract a tiny 1-second slice of format 18 (fast 360p mp4) using yt-dlp + ffmpeg
     try:
-        clean_url = video_url.strip() if video_url else f"https://www.youtube.com/watch?v={video_id}"
+        if video_url and is_twitch_url(video_url):
+            tw_info = extract_twitch_info(video_url)
+            clean_url = get_twitch_canonical_url(tw_info) if tw_info else video_url.strip()
+        elif is_twitch_url(video_id):
+            tw_info = extract_twitch_info(video_id)
+            clean_url = get_twitch_canonical_url(tw_info) if tw_info else video_id
+        else:
+            clean_url = video_url.strip() if video_url else f"https://www.youtube.com/watch?v={video_id}"
         with ephemeral_cookies_file(cookies_content) as temp_cookies:
             base_cmd = get_yt_dlp_base_cmd(include_cookies=True, cookies_path=temp_cookies)
             temp_slice = frames_dir / f"slice_{safe_id}_{sec}.mp4"

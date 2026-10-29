@@ -21,6 +21,7 @@ export const en = {
   form: {
     sourceType: "Input Source",
     tabYoutube: "YouTube Video",
+    tabTwitch: "Twitch VOD / Clip",
     tabGdrive: "Google Drive",
     tabUpload: "Upload Video File",
     dropVideoTitle: "Drop video file here or click to browse",
@@ -31,6 +32,9 @@ export const en = {
     chooseVideoFile: "[+] Choose Video File",
     localVideoNotice: "Local video will be transcribed using Whisper AI speech recognition and analyzed for viral moments.",
     gdriveNotice: "Google Drive video will be downloaded, transcribed using Whisper AI, and analyzed for viral moments.",
+    twitchNotice: "Twitch VOD will be transcribed using Whisper AI speech recognition and analyzed for viral moments.",
+    twitchUrlLabel: "Twitch VOD / Clip URL",
+    twitchUrlPlaceholder: "Paste Twitch link here (e.g. https://www.twitch.tv/videos/... or clips.twitch.tv/...)",
     urlLabel: "YouTube Video URL",
     urlPlaceholder: "Paste video link here (e.g. https://www.youtube.com/watch?v=... or shorts, youtu.be)",
     gdriveUrlLabel: "Google Drive Video URL",

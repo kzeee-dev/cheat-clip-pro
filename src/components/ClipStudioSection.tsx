@@ -351,7 +351,8 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
   transcript = [],
 }) => {
   const { t } = useLanguage();
-  const isYouTube = !videoId?.startsWith('upload_') && !videoId?.startsWith('gdrive_') && !videoUrl?.includes('/api/video');
+  const isYouTube = !videoId?.startsWith('upload_') && !videoId?.startsWith('gdrive_') && !videoId?.startsWith('twitch_') && !videoUrl?.includes('/api/video') && !videoUrl?.includes('twitch.tv');
+  const isTwitch = Boolean(videoId?.startsWith('twitch_') || videoUrl?.includes('twitch.tv'));
   const [hasCookies, setHasCookies] = useState<boolean>(() => hasStoredCookies());
 
   useEffect(() => {
@@ -873,6 +874,67 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
       return;
     }
 
+    if (isTwitch) {
+      if ((window as any).Twitch && (window as any).Twitch.Player) {
+        const container = document.getElementById('studio-preview-twitch-container');
+        if (!container) return;
+
+        if (previewPlayerRef.current) {
+          try {
+            previewPlayerRef.current = null;
+          } catch (e) {}
+        }
+
+        container.innerHTML = '<div id="studio-twitch-iframe-slot"></div>';
+
+        const isClip = videoId?.startsWith('twitch_clip_');
+        const rawId = isClip ? videoId.replace('twitch_clip_', '') : (videoId?.replace('twitch_', '') || '');
+
+        try {
+          const opts: any = {
+            width: '100%',
+            height: '100%',
+            autoplay: false,
+            parent: [window.location.hostname || 'localhost', 'localhost', '127.0.0.1']
+          };
+          if (isClip) opts.clip = rawId; else opts.video = rawId;
+          const player = new (window as any).Twitch.Player('studio-twitch-iframe-slot', opts);
+          previewPlayerRef.current = player;
+
+          player.addEventListener((window as any).Twitch.Player.READY, () => {
+            setPlayerReady(true);
+            try {
+              player.setMuted(true);
+              setIsMuted(true);
+              player.seek(clipStart);
+              setCurrentTime(clipStart);
+            } catch (e) {}
+          });
+
+          player.addEventListener((window as any).Twitch.Player.PLAY, () => {
+            setIsPlaying(true);
+            startTracking();
+          });
+
+          player.addEventListener((window as any).Twitch.Player.PAUSE, () => {
+            setIsPlaying(false);
+            stopTracking();
+            if (isLooping && currentPreviewClip) {
+              try {
+                player.seek(clipStart);
+                player.play();
+              } catch (e) {}
+            }
+          });
+        } catch (err) {
+          console.error('Error instantiating Twitch studio player:', err);
+        }
+      } else {
+        setTimeout(initPreviewPlayer, 250);
+      }
+      return;
+    }
+
     if (window.YT && window.YT.Player) {
       const container = document.getElementById('studio-preview-yt-container');
       if (!container) return;
@@ -962,9 +1024,17 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
               setCurrentTime(t);
               if (currentPreviewClip && t >= currentPreviewClip.end_time) {
                 if (isLooping) {
-                  previewPlayerRef.current.seekTo(currentPreviewClip.start_time, true);
+                  if (typeof previewPlayerRef.current.seek === 'function') {
+                    previewPlayerRef.current.seek(currentPreviewClip.start_time);
+                  } else if (typeof previewPlayerRef.current.seekTo === 'function') {
+                    previewPlayerRef.current.seekTo(currentPreviewClip.start_time, true);
+                  }
                 } else {
-                  previewPlayerRef.current.pauseVideo();
+                  if (typeof previewPlayerRef.current.pause === 'function') {
+                    previewPlayerRef.current.pause();
+                  } else if (typeof previewPlayerRef.current.pauseVideo === 'function') {
+                    previewPlayerRef.current.pauseVideo();
+                  }
                 }
               }
             }
@@ -1028,7 +1098,16 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
   const togglePlayPause = () => {
     if (previewPlayerRef.current) {
       try {
-        if (isPlaying) {
+        if (typeof previewPlayerRef.current.play === 'function') {
+          if (isPlaying) {
+            previewPlayerRef.current.pause();
+          } else {
+            if (currentPreviewClip && (currentTime >= currentPreviewClip.end_time || currentTime < currentPreviewClip.start_time)) {
+              previewPlayerRef.current.seek(currentPreviewClip.start_time);
+            }
+            previewPlayerRef.current.play();
+          }
+        } else if (isPlaying) {
           previewPlayerRef.current.pauseVideo();
         } else {
           if (currentPreviewClip && (currentTime >= currentPreviewClip.end_time || currentTime < currentPreviewClip.start_time)) {
@@ -1057,9 +1136,13 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
 
   const handleSeek = (newTime: number) => {
     setCurrentTime(newTime);
-    if (previewPlayerRef.current && typeof previewPlayerRef.current.seekTo === 'function') {
+    if (previewPlayerRef.current) {
       try {
-        previewPlayerRef.current.seekTo(newTime, true);
+        if (typeof previewPlayerRef.current.seek === 'function') {
+          previewPlayerRef.current.seek(newTime);
+        } else if (typeof previewPlayerRef.current.seekTo === 'function') {
+          previewPlayerRef.current.seekTo(newTime, true);
+        }
       } catch (e) {}
     } else if (directVideoRef.current) {
       directVideoRef.current.currentTime = newTime;
@@ -1069,10 +1152,15 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
 
   const handleRestart = () => {
     setCurrentTime(clipStart);
-    if (previewPlayerRef.current && typeof previewPlayerRef.current.seekTo === 'function') {
+    if (previewPlayerRef.current) {
       try {
-        previewPlayerRef.current.seekTo(clipStart, true);
-        previewPlayerRef.current.playVideo();
+        if (typeof previewPlayerRef.current.seek === 'function') {
+          previewPlayerRef.current.seek(clipStart);
+          previewPlayerRef.current.play();
+        } else if (typeof previewPlayerRef.current.seekTo === 'function') {
+          previewPlayerRef.current.seekTo(clipStart, true);
+          previewPlayerRef.current.playVideo();
+        }
       } catch (e) {}
     } else if (directVideoRef.current) {
       directVideoRef.current.currentTime = clipStart;
@@ -1085,7 +1173,10 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
   const toggleMute = () => {
     if (previewPlayerRef.current) {
       try {
-        if (isMuted) {
+        if (typeof previewPlayerRef.current.setMuted === 'function') {
+          previewPlayerRef.current.setMuted(!isMuted);
+          setIsMuted(!isMuted);
+        } else if (isMuted) {
           previewPlayerRef.current.unMute();
           setIsMuted(false);
         } else {
@@ -4723,6 +4814,18 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                             }
                           }}
                         />
+                      ) : isTwitch ? (
+                        <div
+                          id="studio-preview-twitch-container"
+                          className="studio-yt-embed-slot"
+                          style={{
+                            opacity: playerReady ? 1 : 0,
+                            transition: 'opacity 0.25s ease',
+                            ['--preview-crop-pct' as any]: previewCropPercent,
+                          }}
+                        >
+                          <div id="studio-twitch-iframe-slot"></div>
+                        </div>
                       ) : (
                         <div
                           id="studio-preview-yt-container"
