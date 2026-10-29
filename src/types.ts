@@ -120,7 +120,10 @@ export interface RenderSettings {
   fontSizePx?: number;
   textCase: TextCaseOption;
   titleYPercent?: number;
+  titleXPercent?: number;
+  cropXPercent?: number;
   subtitleYPercent?: number;
+  subtitleOffsetSeconds?: number;
   subtitlePositionMode?: SubtitlePositionMode;
   subtitleCenterYPercent?: number;
   selectedClips: ViralClip[];
