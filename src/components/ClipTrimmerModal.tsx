@@ -13,7 +13,7 @@ interface ClipTrimmerModalProps {
   videoDuration: number;
   transcript?: TranscriptLine[];
   onClose: () => void;
-  onApply: (adjustedClip: ViralClip) => void;
+  onApply?: (adjustedClip: ViralClip) => void;
   onDownload: (adjustedClip: ViralClip) => Promise<void> | void;
 }
 
@@ -1535,6 +1535,25 @@ export const ClipTrimmerModal: React.FC<ClipTrimmerModalProps> = ({
             >
               [ {t.trimmer.closeBtn.toUpperCase()} ]
             </button>
+
+            {onApply && (
+              <button
+                type="button"
+                onClick={() => {
+                  onApply(getAdjustedClip());
+                  onClose();
+                }}
+                disabled={isDownloading}
+                className="trimmer-download-btn"
+                style={{
+                  background: '#eab308',
+                  borderColor: '#facc15',
+                  color: '#09090b',
+                }}
+              >
+                {t.trimmer.applyBtn}
+              </button>
+            )}
 
             <button
               type="button"

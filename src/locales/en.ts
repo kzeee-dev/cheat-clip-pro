@@ -687,6 +687,7 @@ export const en = {
     downloadingBtn: "[..] SLICING & DOWNLOADING...",
     downloadSuccessBtn: (start: string, end: string) => `[OK] DOWNLOADED (${start} - ${end})`,
     resetBtn: "[↺] RESET TO ORIGINAL",
+    applyBtn: "[OK] APPLY",
     closeBtn: "Close",
     clipTitleLabel: "Clip Title / Filename:",
   },

@@ -6102,6 +6102,7 @@ Transcript:
           videoDuration={result?.duration || 0}
           transcript={result?.transcript}
           onClose={() => setTrimmerClip(null)}
+          onApply={handleApplyAdjustedClipToResults}
           onDownload={async (adjustedClip) => {
             handleApplyAdjustedClipToResults(adjustedClip);
             await handleDownloadRawClip(adjustedClip);
