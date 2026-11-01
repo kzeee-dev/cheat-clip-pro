@@ -1680,7 +1680,7 @@ export const ClipTrimmerModal: React.FC<ClipTrimmerModalProps> = ({
                 style={{
                   background: '#eab308',
                   borderColor: '#facc15',
-                  color: '#09090b'
+                  color: '#09090b',
                 }}
               >
                 {t.trimmer.applyBtn}
