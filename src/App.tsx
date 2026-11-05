@@ -6,7 +6,7 @@ import { CookiesModal } from './components/CookiesModal';
 import { CookieWarningModal } from './components/CookieWarningModal';
 import { ClipTrimmerModal } from './components/ClipTrimmerModal';
 import { AppUpdateModal } from './components/AppUpdateModal';
-import { resilientFetch } from './utils/api';
+import { resilientFetch, apiUrl } from './utils/api';
 import { getStoredCookies, hasStoredCookies } from './utils/cookieUtils';
 import { extractAudioFromVideoClient } from './utils/audioExtractor';
 import { renderClipClientSide, triggerBrowserDownload } from './services/clientRenderer';
@@ -254,7 +254,7 @@ export default function App() {
 
   // Query server update permissions (disabled on remote VPS/Docker for security)
   useEffect(() => {
-    fetch('/api/system/version')
+    fetch(apiUrl('/api/system/version'))
       .then((res) => res.json())
       .then((data) => {
         if (data && typeof data.allow_update === 'boolean') {
@@ -318,7 +318,7 @@ export default function App() {
       batchEventSourceRef.current.close();
       batchEventSourceRef.current = null;
     }
-    const eventSource = new EventSource(`/api/render-progress/${batchId}`);
+    const eventSource = new EventSource(apiUrl(`/api/render-progress/${batchId}`));
     batchEventSourceRef.current = eventSource;
 
     eventSource.onmessage = (event) => {
@@ -476,11 +476,11 @@ export default function App() {
           if (sourceMode === 'upload' && uploadedVideoFile) {
             rawSourceUrl = URL.createObjectURL(uploadedVideoFile);
           } else if (result.source_type === 'upload' || result.video_id?.startsWith('upload_') || result.video_id?.startsWith('gdrive_')) {
-            rawSourceUrl = `/api/video/${result.video_id}`;
+            rawSourceUrl = apiUrl(`/api/video/${result.video_id}`);
           } else {
             const userCookies = getStoredCookies();
             const targetUrl = result.video_url || (url.trim() ? url.trim() : `https://www.youtube.com/watch?v=${result.video_id}`);
-            const rawReq = await fetch('/api/download-raw-clip', {
+            const rawReq = await fetch(apiUrl('/api/download-raw-clip'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -502,7 +502,7 @@ export default function App() {
             rawSourceUrl = await new Promise<string>((resolve, reject) => {
               const pollInterval = setInterval(async () => {
                 try {
-                  const statusRes = await fetch(`/api/download-raw-clip-status/${jobId}`);
+                  const statusRes = await fetch(apiUrl(`/api/download-raw-clip-status/${jobId}`));
                   if (!statusRes.ok) {
                     clearInterval(pollInterval);
                     reject(new Error('Failed to retrieve raw stream status'));
@@ -644,14 +644,14 @@ export default function App() {
 
     try {
       const userCookies = getStoredCookies();
-      const resp = await fetch('/api/render-batch', {
+      const resp = await fetch(apiUrl('/api/render-batch'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           video_url: (result.video_url && !result.video_url.startsWith('blob:'))
             ? result.video_url
             : (result.video_id?.startsWith('upload_') || result.video_id?.startsWith('gdrive_'))
-              ? `/api/video/${result.video_id}`
+              ? apiUrl(`/api/video/${result.video_id}`)
               : url || `https://www.youtube.com/watch?v=${result.video_id}`,
           video_id: result.video_id,
           clips: settings.selectedClips,
@@ -781,7 +781,7 @@ export default function App() {
       });
 
       const userCookies = getStoredCookies();
-      const resp = await fetch(`/api/render-batch/${batchId}/retry`, {
+      const resp = await fetch(apiUrl(`/api/render-batch/${batchId}/retry`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -854,7 +854,7 @@ export default function App() {
     if (isClearingGlobalTemp) return;
     setIsClearingGlobalTemp(true);
     try {
-      const resp = await fetch('/api/clear-temp', { method: 'POST' });
+      const resp = await fetch(apiUrl('/api/clear-temp'), { method: 'POST' });
       if (resp.ok) {
         const data = await resp.json();
         setToastMessage(data.message || t.header.clearedTempSuccess);
@@ -1102,11 +1102,11 @@ export default function App() {
             const gdriveId = gdriveIdMatch ? gdriveIdMatch[1] : '';
             itemUrl = gdriveId ? `https://drive.google.com/file/d/${gdriveId}/view` : (data.video_url || '');
           } else if (isUpload) {
-            itemUrl = data.video_url || `/api/video/${video_id}`;
+            itemUrl = data.video_url ? apiUrl(data.video_url) : apiUrl(`/api/video/${video_id}`);
           }
 
           const thumb = (isGDrive || isUpload || isTwitch)
-            ? `/api/frame/${encodeURIComponent(video_id)}?t=2`
+            ? apiUrl(`/api/frame/${encodeURIComponent(video_id)}?t=2`)
             : `https://img.youtube.com/vi/${video_id}/mqdefault.jpg`;
 
           entries.push({
@@ -1178,7 +1178,7 @@ export default function App() {
           filename: data.title || data.video_id,
           savedName: data.video_url?.replace('/api/video/', '') || data.video_id,
           duration: data.duration,
-          videoUrl: data.video_url || `/api/video/${data.video_id}`,
+          videoUrl: data.video_url ? apiUrl(data.video_url) : apiUrl(`/api/video/${data.video_id}`),
           filePath: '',
           width: 1080,
           height: 1920
@@ -1776,7 +1776,7 @@ export default function App() {
           // Upload lightweight audio file (.wav) to /api/upload-video
           const upData = await new Promise<any>((resolve, reject) => {
             const xhr = new XMLHttpRequest();
-            xhr.open('POST', '/api/upload-video');
+            xhr.open('POST', apiUrl('/api/upload-video'));
             xhr.upload.onprogress = (event) => {
               if (event.lengthComputable && event.total > 0) {
                 const pct = Math.round((event.loaded / event.total) * 100);
@@ -1923,7 +1923,7 @@ export default function App() {
 
     try {
       const userCookies = getStoredCookies();
-      const response = await fetch('/api/analyze', {
+      const response = await fetch(apiUrl('/api/analyze'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: abortCtrl.signal,
@@ -2054,7 +2054,7 @@ export default function App() {
           const persistData = {
             ...resultData,
             video_url: resultData.video_url?.startsWith('blob:')
-              ? (currentVideoInfo?.savedName ? `/api/video/${currentVideoInfo.savedName}` : `/api/video/${resultData.video_id}`)
+              ? (currentVideoInfo?.savedName ? apiUrl(`/api/video/${currentVideoInfo.savedName}`) : apiUrl(`/api/video/${resultData.video_id}`))
               : resultData.video_url
           };
           localStorage.setItem(targetCacheKey, JSON.stringify(persistData));
@@ -2070,7 +2070,7 @@ export default function App() {
         if (currentVideoInfo.videoUrl) {
           resultData.video_url = currentVideoInfo.videoUrl;
         } else if (!resultData.video_url || resultData.video_url.endsWith('.wav')) {
-          resultData.video_url = currentVideoInfo.savedName ? `/api/video/${currentVideoInfo.savedName}` : `/api/video/${currentVideoInfo.videoId}`;
+          resultData.video_url = currentVideoInfo.savedName ? apiUrl(`/api/video/${currentVideoInfo.savedName}`) : apiUrl(`/api/video/${currentVideoInfo.videoId}`);
         }
       }
 
@@ -2208,7 +2208,7 @@ export default function App() {
     const targetUrl = (result.video_url && !result.video_url.startsWith('blob:'))
       ? result.video_url
       : (result.video_id?.startsWith('gdrive_') || result.video_id?.startsWith('upload_'))
-        ? `/api/video/${result.video_id}`
+        ? apiUrl(`/api/video/${result.video_id}`)
         : (url.trim() ? url.trim() : `https://www.youtube.com/watch?v=${result.video_id}`);
     setIsDownloadingRaw(true);
     setRawDownloadProgress({
@@ -2224,7 +2224,7 @@ export default function App() {
 
     try {
       const userCookies = getStoredCookies();
-      const res = await fetch("/api/download-raw-video", {
+      const res = await fetch(apiUrl("/api/download-raw-video"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2254,7 +2254,7 @@ export default function App() {
       await new Promise<void>((resolve, reject) => {
         const intervalId = setInterval(async () => {
           try {
-            const statusRes = await fetch(`/api/download-raw-status/${jobId}`);
+            const statusRes = await fetch(apiUrl(`/api/download-raw-status/${jobId}`));
             if (!statusRes.ok) {
               clearInterval(intervalId);
               reject(new Error(t.rawDownload.failedToast));
@@ -2278,7 +2278,7 @@ export default function App() {
               clearInterval(intervalId);
               setToastMessage(t.rawDownload.completedToast);
               const a = document.createElement("a");
-              a.href = statusData.download_url || `/api/download-rendered/${statusData.filename}`;
+              a.href = statusData.download_url ? apiUrl(statusData.download_url) : apiUrl(`/api/download-rendered/${statusData.filename}`);
               a.download = statusData.filename || `${result.title || result.video_id} (Full Video).mp4`;
               document.body.appendChild(a);
               a.click();
@@ -2412,12 +2412,12 @@ export default function App() {
     const targetUrl = (result.video_url && !result.video_url.startsWith('blob:'))
       ? result.video_url
       : (result.video_id?.startsWith('gdrive_') || result.video_id?.startsWith('upload_'))
-        ? `/api/video/${result.video_id}`
+        ? apiUrl(`/api/video/${result.video_id}`)
         : (url.trim() ? url.trim() : `https://www.youtube.com/watch?v=${result.video_id}`);
 
     try {
       const userCookies = getStoredCookies();
-      const res = await fetch("/api/download-raw-clip", {
+      const res = await fetch(apiUrl("/api/download-raw-clip"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2440,7 +2440,7 @@ export default function App() {
       await new Promise<void>((resolve, reject) => {
         const intervalId = setInterval(async () => {
           try {
-            const statusRes = await fetch(`/api/download-raw-clip-status/${jobId}`);
+            const statusRes = await fetch(apiUrl(`/api/download-raw-clip-status/${jobId}`));
             if (!statusRes.ok) {
               clearInterval(intervalId);
               reject(new Error("Failed to get clip download status"));
@@ -5381,7 +5381,7 @@ Transcript:
                           <video
                             key={`direct-player-${result.video_id}`}
                             ref={directVideoPlayerRef}
-                            src={result.video_url ? encodeURI(result.video_url) : `/api/video/${encodeURIComponent(result.video_id)}`}
+                            src={result.video_url ? encodeURI(apiUrl(result.video_url)) : apiUrl(`/api/video/${encodeURIComponent(result.video_id)}`)}
                             controls
                             playsInline
                             preload="auto"
@@ -5403,7 +5403,7 @@ Transcript:
                             onPause={() => stopTracking()}
                             onError={(e) => {
                               const vid = e.currentTarget;
-                              const fallback = `/api/video/${encodeURIComponent(result.video_id)}`;
+                              const fallback = apiUrl(`/api/video/${encodeURIComponent(result.video_id)}`);
                               if (vid.src !== fallback && !vid.src.endsWith(fallback)) {
                                 console.warn('[Player] Direct video failed, attempting fallback to server stream:', fallback);
                                 vid.src = fallback;

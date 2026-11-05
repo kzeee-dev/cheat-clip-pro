@@ -15,7 +15,7 @@ import {
   Pause
 } from 'lucide-react';
 import { useLanguage } from '../locales';
-import { resilientFetch } from '../utils/api';
+import { resilientFetch, apiUrl } from '../utils/api';
 import { getStoredCookies, hasStoredCookies } from '../utils/cookieUtils';
 import { detectFaceClientSide } from '../utils/clientFaceDetector';
 import { isMobileDevice } from '../utils/deviceUtils';
@@ -807,7 +807,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
 
         const userCookies = getStoredCookies();
         const cookiesParam = userCookies ? `&cookies=${encodeURIComponent(userCookies)}` : '';
-        const res = await fetch(`/api/detect-face?video_id=${encodeURIComponent(videoId)}&timestamp=${clipStart}&video_url=${encodeURIComponent(videoUrl || '')}&facecam_position=${encodeURIComponent(facecamPosition)}&streamer_preset=${encodeURIComponent(streamerPreset)}${cookiesParam}`);
+        const res = await fetch(apiUrl(`/api/detect-face?video_id=${encodeURIComponent(videoId)}&timestamp=${clipStart}&video_url=${encodeURIComponent(videoUrl || '')}&facecam_position=${encodeURIComponent(facecamPosition)}&streamer_preset=${encodeURIComponent(streamerPreset)}${cookiesParam}`));
         if (res.ok && isMounted) {
           const data = await res.json();
           if (data && typeof data.cx === 'number') {
@@ -1254,7 +1254,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
     setIsClearingTemp(true);
     setTempClearMsg('');
     try {
-      const resp = await fetch('/api/clear-temp', { method: 'POST' });
+      const resp = await fetch(apiUrl('/api/clear-temp'), { method: 'POST' });
       if (resp.ok) {
         const data = await resp.json();
         setTempClearMsg(`✓ ${data.message || 'Temp folder cleared!'}`);
@@ -1278,7 +1278,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch('/api/upload-bgm', {
+      const res = await fetch(apiUrl('/api/upload-bgm'), {
         method: 'POST',
         body: formData,
       });
@@ -1359,7 +1359,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch('/api/upload-sfx', {
+      const res = await fetch(apiUrl('/api/upload-sfx'), {
         method: 'POST',
         body: formData,
       });
@@ -1425,7 +1425,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
 
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch('/api/upload-watermark', {
+      const res = await fetch(apiUrl('/api/upload-watermark'), {
         method: 'POST',
         body: formData,
       });
@@ -4683,7 +4683,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                     {videoUrl && (videoUrl.endsWith('.mp4') || videoUrl.endsWith('.webm') || videoUrl.endsWith('.mov') || videoUrl.endsWith('.mkv') || videoUrl.includes('/api/video') || videoUrl.startsWith('blob:') || videoId?.startsWith('upload_') || videoId?.startsWith('gdrive_')) ? (
                       <video
                         ref={ambientVideoRef}
-                        src={videoUrl ? encodeURI(videoUrl) : `/api/video/${encodeURIComponent(videoId || '')}`}
+                        src={videoUrl ? encodeURI(videoUrl.startsWith('blob:') ? videoUrl : apiUrl(videoUrl)) : apiUrl(`/api/video/${encodeURIComponent(videoId || '')}`)}
                         playsInline
                         muted
                         onError={(e) => {
@@ -4692,7 +4692,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                             console.warn('Ambient blob video playback error:', e);
                             return;
                           }
-                          const fallback = `/api/video/${encodeURIComponent(videoId || '')}`;
+                          const fallback = apiUrl(`/api/video/${encodeURIComponent(videoId || '')}`);
                           if (videoId && vid.src !== fallback && !vid.src.endsWith(fallback)) {
                             vid.src = fallback;
                             vid.load();
@@ -4766,7 +4766,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                       {videoUrl && (videoUrl.endsWith('.mp4') || videoUrl.endsWith('.webm') || videoUrl.endsWith('.mov') || videoUrl.endsWith('.mkv') || videoUrl.includes('/api/video') || videoUrl.startsWith('blob:') || videoId?.startsWith('upload_') || videoId?.startsWith('gdrive_')) ? (
                         <video
                           ref={directVideoRef}
-                          src={videoUrl ? encodeURI(videoUrl) : `/api/video/${encodeURIComponent(videoId || '')}`}
+                          src={videoUrl ? encodeURI(videoUrl.startsWith('blob:') ? videoUrl : apiUrl(videoUrl)) : apiUrl(`/api/video/${encodeURIComponent(videoId || '')}`)}
                           playsInline
                           muted={isMuted}
                           onError={(e) => {
@@ -4775,7 +4775,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                               console.warn('Direct blob video playback error:', e);
                               return;
                             }
-                            const fallback = `/api/video/${encodeURIComponent(videoId || '')}`;
+                            const fallback = apiUrl(`/api/video/${encodeURIComponent(videoId || '')}`);
                             if (videoId && vid.src !== fallback && !vid.src.endsWith(fallback)) {
                               vid.src = fallback;
                               vid.load();
@@ -5519,7 +5519,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
 
               {(batchProgress.overall_status === 'completed' || batchProgress.clips.some(c => c.status === 'completed')) && (
                 <a
-                  href={batchProgress.zip_url || `/api/download-batch-zip/${batchProgress.batch_id}`}
+                  href={apiUrl(batchProgress.zip_url || `/api/download-batch-zip/${batchProgress.batch_id}`)}
                   download={`cheat_clip_pro_${batchProgress.batch_id}.zip`}
                   className="glowing-btn batch-zip-download-btn"
                   style={{
@@ -5762,7 +5762,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                       controls
                       playsInline
                       preload="metadata"
-                      src={`/api/video/${encodeURIComponent(clip.download_url.split('/').pop()?.split('?')[0] || '')}`}
+                      src={apiUrl(`/api/video/${encodeURIComponent(clip.download_url.split('/').pop()?.split('?')[0] || '')}`)}
                       style={{
                         width: '100%',
                         maxWidth: '320px',

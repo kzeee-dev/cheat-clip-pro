@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ShieldCheck, AlertTriangle, Shield, Trash2, X } from 'lucide-react';
 import { useLanguage } from '../locales';
+import { apiUrl } from '../utils/api';
 import {
   getStoredCookies,
   setStoredCookies,
@@ -142,7 +143,7 @@ export const CookiesModal: React.FC<CookiesModalProps> = ({
     setMessage(null);
     try {
       removeStoredCookies();
-      fetch('/api/cookies', { method: 'DELETE' }).catch(() => {});
+      fetch(apiUrl('/api/cookies'), { method: 'DELETE' }).catch(() => {});
       loadStatus();
       setMessage({ text: t.cookies.deletedSuccess, type: 'info' });
     } catch (err: any) {
