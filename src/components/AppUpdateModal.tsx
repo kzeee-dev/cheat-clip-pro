@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { RefreshCw, CheckCircle2, AlertTriangle, RotateCcw, X } from 'lucide-react';
 import { useLanguage } from '../locales';
+import { apiUrl } from '../utils/api';
 import styles from './AppUpdateModal.module.css';
 
 export interface VersionInfo {
@@ -47,7 +48,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({ isOpen, onClose 
 
   const fetchVersion = async () => {
     try {
-      const res = await fetch('/api/system/version');
+      const res = await fetch(apiUrl('/api/system/version'));
       if (res.ok) {
         const data = await res.json();
         setInfo((prev) => ({ ...prev, ...data }));
@@ -61,7 +62,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({ isOpen, onClose 
     setIsChecking(true);
     setErrorMessage(null);
     try {
-      const res = await fetch('/api/system/check-update');
+      const res = await fetch(apiUrl('/api/system/check-update'));
       if (res.ok) {
         const data = await res.json();
         setInfo(data);
@@ -105,7 +106,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({ isOpen, onClose 
         attempts += 1;
         setReconnectAttempt(attempts);
         try {
-          const res = await fetch('/api/health?refresh=true', { cache: 'no-store' });
+          const res = await fetch(apiUrl('/api/health?refresh=true'), { cache: 'no-store' });
           if (res.ok) {
             if (pollTimerRef.current) {
               clearInterval(pollTimerRef.current);
@@ -138,7 +139,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({ isOpen, onClose 
     setStatusText(t.updateModal.updatingApp);
 
     try {
-      const res = await fetch('/api/system/update', {
+      const res = await fetch(apiUrl('/api/system/update'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
@@ -157,7 +158,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({ isOpen, onClose 
   const handleDirectRestart = async () => {
     setErrorMessage(null);
     try {
-      await fetch('/api/system/restart', {
+      await fetch(apiUrl('/api/system/restart'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });

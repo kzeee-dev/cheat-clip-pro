@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Cheat Clip Pro</string>
+    <string name="title_activity_main">Cheat Clip Pro</string>
+    <string name="package_name">com.kzeee.cheatclippro</string>
+    <string name="custom_url_scheme">com.kzeee.cheatclippro</string>
+</resources>

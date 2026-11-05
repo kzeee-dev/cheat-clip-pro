@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { X, Play, Pause, ChevronDown, ChevronUp } from 'lucide-react';
 import { useLanguage } from '../locales';
+import { apiUrl } from '../utils/api';
 import type { ViralClip, TranscriptLine } from '../types';
 
 interface ClipTrimmerModalProps {
@@ -812,13 +813,13 @@ export const ClipTrimmerModal: React.FC<ClipTrimmerModalProps> = ({
                 {isDirectVideo ? (
                   <video
                     ref={directVideoRef}
-                    src={videoUrl ? encodeURI(videoUrl) : `/api/video/${encodeURIComponent(videoId)}`}
+                    src={videoUrl ? encodeURI(videoUrl.startsWith('blob:') ? videoUrl : apiUrl(videoUrl)) : apiUrl(`/api/video/${encodeURIComponent(videoId)}`)}
                     playsInline
                     preload="auto"
                     onError={(e) => {
                       const vid = e.currentTarget;
                       if (videoUrl?.startsWith('blob:')) return;
-                      const fallback = `/api/video/${encodeURIComponent(videoId)}`;
+                      const fallback = apiUrl(`/api/video/${encodeURIComponent(videoId)}`);
                       if (vid.src !== fallback && !vid.src.endsWith(fallback)) {
                         vid.src = fallback;
                         vid.load();
