@@ -177,4 +177,10 @@ export interface BatchRenderProgress {
   error_message?: string;
   warning_message?: string;
   clips: RenderClipStatus[];
+  logs?: {
+    timestamp: string;
+    message: string;
+    level?: 'info' | 'progress' | 'success' | 'error' | 'warning';
+    clip_index?: number | null;
+  }[];
 }

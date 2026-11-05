@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 import zipfile
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from backend.config import (
@@ -27,6 +28,24 @@ BATCH_REQUESTS: Dict[str, RenderBatchRequest] = {}
 _RENDER_SEMAPHORE = asyncio.Semaphore(1)
 
 
+def add_render_log(batch_id: str, message: str, level: str = "info", clip_index: Optional[int] = None):
+    """Append a bounded, timestamped real backend event to a render batch."""
+    batch = RENDER_BATCHES.get(batch_id)
+    if not batch:
+        return
+
+    logs = batch.setdefault("logs", [])
+    logs.append({
+        "timestamp": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "message": str(message)[:500],
+        "level": level if level in ("info", "progress", "success", "error", "warning") else "info",
+        "clip_index": clip_index
+    })
+
+    if len(logs) > 300:
+        del logs[:-300]
+
+
 async def render_single_batch_clip(
     batch_id: str,
     idx: int,
@@ -44,6 +63,7 @@ async def render_single_batch_clip(
     clip_status = batch["clips"][idx]
     clip_status["status"] = "downloading"
     clip_status["progress_percent"] = 15
+    add_render_log(batch_id, f"Clip {idx + 1}: mulai mengunduh sumber video", clip_index=idx)
     clip_status["error_message"] = None
     clip_status["error"] = None
 
@@ -75,6 +95,7 @@ async def render_single_batch_clip(
         # 2. Transcribe & Generate Subtitles / Title (.ass)
         clip_status["status"] = "transcribing"
         clip_status["progress_percent"] = 40
+        add_render_log(batch_id, f"Clip {idx + 1}: mulai transkripsi audio dan pembuatan subtitle", clip_index=idx)
 
         display_title = None
         base_title = (
@@ -192,6 +213,24 @@ async def render_single_batch_clip(
 
         out_filename = f"clip_{idx+1}_{batch_id}.mp4"
         out_path = str(EXPORTS_DIR / out_filename)
+        add_render_log(batch_id, f"Clip {idx + 1}: subtitle siap, memulai render FFmpeg", clip_index=idx)
+
+        last_progress = {"timestamp": 0.0, "percent": -5}
+
+        def _on_ffmpeg_progress(info: Dict[str, Any]):
+            now = datetime.now().timestamp()
+            percent = int(info.get("percent", 0))
+            if now - last_progress["timestamp"] < 2 and percent < last_progress["percent"] + 5:
+                return
+            last_progress["timestamp"] = now
+            last_progress["percent"] = percent
+            add_render_log(
+                batch_id,
+                f"FFmpeg clip {idx + 1}: {percent}% | frame {info.get('frame', 0)} | "
+                f"{float(info.get('fps', 0)):.1f} fps | time {float(info.get('time', 0)):.1f}s | speed {info.get('speed', '0x')}",
+                level="progress",
+                clip_index=idx
+            )
 
         await asyncio.to_thread(
             render_clip_to_mp4,
@@ -227,7 +266,8 @@ async def render_single_batch_clip(
             hardware_accel=settings.hardware_accel or "auto",
             title_y_percent=settings.title_y_percent,
             crop_x_percent=getattr(settings, "crop_x_percent", None),
-            title_x_percent=getattr(settings, "title_x_percent", 50.0)
+            title_x_percent=getattr(settings, "title_x_percent", 50.0),
+            progress_callback=_on_ffmpeg_progress
         )
 
         if not os.path.exists(out_path) or not is_valid_mp4(out_path):
@@ -235,10 +275,12 @@ async def render_single_batch_clip(
 
         clip_status["status"] = "completed"
         clip_status["progress_percent"] = 100
+        add_render_log(batch_id, f"Clip {idx + 1}: render selesai dan file MP4 valid", level="success", clip_index=idx)
         clip_status["download_url"] = f"/api/download-rendered/{out_filename}"
         clip_status["output_path"] = out_path
 
     except Exception as e:
+        add_render_log(batch_id, f"Clip {idx + 1}: ERROR - {e}", level="error", clip_index=idx)
         logger.error(f"Error rendering clip {idx} in batch {batch_id}: {e}")
         clip_status["status"] = "error"
         err_msg = str(e)
@@ -337,8 +379,10 @@ async def render_merged_batch_clips(
 
     try:
         total_segments = len(clips)
+        add_render_log(batch_id, f"Merged: mulai mengunduh {total_segments} segmen", clip_index=0)
         # 1. Download / slice each segment
         for i, seg in enumerate(clips):
+            add_render_log(batch_id, f"Merged: mengunduh segmen {i + 1}/{total_segments}", clip_index=0)
             clip_status["progress_percent"] = 10 + int((i / max(1, total_segments)) * 25)
             s_t = float(seg.get("start_time", 0.0))
             e_t = float(seg.get("end_time", s_t + 30.0))
@@ -360,6 +404,7 @@ async def render_merged_batch_clips(
         # 2. Concatenate raw video segments
         clip_status["status"] = "transcribing"
         clip_status["progress_percent"] = 40
+        add_render_log(batch_id, "Merged: segmen selesai diunduh, mulai penggabungan", clip_index=0)
 
         raw_merged_filename = f"{batch_id}_merged_raw.mp4"
         raw_merged_path = str(TEMP_DIR / raw_merged_filename)
@@ -387,7 +432,9 @@ async def render_merged_batch_clips(
             concat_timeout = max(180, total_segments * 60)
             logger.info(f"Concatenating {len(part_paths)} segments into {raw_merged_path}")
             await asyncio.to_thread(subprocess.run, concat_cmd, check=True, timeout=concat_timeout)
+            add_render_log(batch_id, "Merged: seluruh segmen berhasil digabung", level="success", clip_index=0)
 
+        add_render_log(batch_id, "Merged: mulai transkripsi dan pembuatan subtitle", clip_index=0)
         # 3. Transcribe & generate time-shifted subtitles
         target_lang = None
         if transcript:
@@ -497,6 +544,24 @@ async def render_merged_batch_clips(
         clean_safe_title = clean_safe_title.replace(" ", "_")[:40] or "compilation"
         out_filename = f"compilation_{clean_safe_title}_{batch_id}.mp4"
         out_path = str(EXPORTS_DIR / out_filename)
+        add_render_log(batch_id, "Merged: subtitle siap, memulai render FFmpeg", clip_index=0)
+
+        last_progress = {"timestamp": 0.0, "percent": -5}
+
+        def _on_ffmpeg_progress(info: Dict[str, Any]):
+            now = datetime.now().timestamp()
+            percent = int(info.get("percent", 0))
+            if now - last_progress["timestamp"] < 2 and percent < last_progress["percent"] + 5:
+                return
+            last_progress["timestamp"] = now
+            last_progress["percent"] = percent
+            add_render_log(
+                batch_id,
+                f"FFmpeg merged: {percent}% | frame {info.get('frame', 0)} | "
+                f"{float(info.get('fps', 0)):.1f} fps | time {float(info.get('time', 0)):.1f}s | speed {info.get('speed', '0x')}",
+                level="progress",
+                clip_index=0
+            )
 
         await asyncio.to_thread(
             render_clip_to_mp4,
@@ -532,7 +597,8 @@ async def render_merged_batch_clips(
             hardware_accel=settings.hardware_accel or "auto",
             title_y_percent=settings.title_y_percent,
             crop_x_percent=getattr(settings, "crop_x_percent", None),
-            title_x_percent=getattr(settings, "title_x_percent", 50.0)
+            title_x_percent=getattr(settings, "title_x_percent", 50.0),
+            progress_callback=_on_ffmpeg_progress
         )
 
         if not os.path.exists(out_path) or not is_valid_mp4(out_path):
@@ -540,10 +606,12 @@ async def render_merged_batch_clips(
 
         clip_status["status"] = "completed"
         clip_status["progress_percent"] = 100
+        add_render_log(batch_id, "Merged: render selesai dan file MP4 valid", level="success", clip_index=0)
         clip_status["download_url"] = f"/api/download-rendered/{out_filename}"
         clip_status["output_path"] = out_path
 
     except Exception as e:
+        add_render_log(batch_id, f"Merged: ERROR - {e}", level="error", clip_index=0)
         logger.error(f"Error rendering merged batch {batch_id}: {e}")
         clip_status["status"] = "error"
         err_msg = str(e)

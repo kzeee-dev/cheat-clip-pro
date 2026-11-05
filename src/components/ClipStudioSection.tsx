@@ -5757,6 +5757,24 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                     </div>
                   </div>
 
+                  {clip.status === 'completed' && clip.download_url && (
+                    <video
+                      controls
+                      playsInline
+                      preload="metadata"
+                      src={`/api/video/${encodeURIComponent(clip.download_url.split('/').pop()?.split('?')[0] || '')}`}
+                      style={{
+                        width: '100%',
+                        maxWidth: '320px',
+                        aspectRatio: '9 / 16',
+                        objectFit: 'contain',
+                        background: '#000',
+                        borderRadius: '8px',
+                        marginTop: '0.5rem'
+                      }}
+                    />
+                  )}
+
                   {/* Visible Error Box when clip fails */}
                   {isError && rawError && (
                     <ClipRenderErrorBox
@@ -5769,6 +5787,82 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
               );
             })}
           </div>
+
+          {batchProgress.logs && batchProgress.logs.length > 0 && (
+            <div style={{
+              marginTop: '0.75rem',
+              border: '1px solid rgba(56, 189, 248, 0.25)',
+              borderRadius: '8px',
+              overflow: 'hidden',
+              background: '#080d14'
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.55rem 0.75rem',
+                background: 'rgba(56, 189, 248, 0.08)',
+                borderBottom: '1px solid rgba(56, 189, 248, 0.18)'
+              }}>
+                <span style={{
+                  color: '#7dd3fc',
+                  fontSize: '0.7rem',
+                  fontWeight: 800,
+                  letterSpacing: '0.08em'
+                }}>LIVE RENDER TERMINAL</span>
+                <span style={{
+                  color: '#64748b',
+                  fontSize: '0.65rem',
+                  fontFamily: 'monospace'
+                }}>{batchProgress.logs.length} events</span>
+              </div>
+
+              <div style={{
+                maxHeight: '220px',
+                overflowY: 'auto',
+                padding: '0.6rem 0.75rem',
+                fontFamily: 'monospace',
+                fontSize: '0.68rem',
+                lineHeight: 1.65
+              }}>
+                {batchProgress.logs.slice(-80).map((log, index) => {
+                  const levelColor =
+                    log.level === 'error' ? '#f87171' :
+                    log.level === 'success' ? '#4ade80' :
+                    log.level === 'warning' ? '#fbbf24' :
+                    log.level === 'progress' ? '#38bdf8' : '#cbd5e1';
+
+                  const logTime = log.timestamp
+                    ? new Date(log.timestamp).toLocaleTimeString([], { hour12: false })
+                    : '--:--:--';
+
+                  return (
+                    <div
+                      key={`${log.timestamp || 'log'}-${index}`}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '0.65rem',
+                        borderBottom: '1px solid rgba(255,255,255,0.035)',
+                        padding: '2px 0'
+                      }}
+                    >
+                      <span style={{ color: '#64748b', flexShrink: 0 }}>
+                        {logTime}
+                      </span>
+                      <span style={{
+                        color: levelColor,
+                        whiteSpace: 'pre-wrap',
+                        overflowWrap: 'anywhere'
+                      }}>
+                        {log.message}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

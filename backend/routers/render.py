@@ -66,6 +66,7 @@ async def start_batch_render(request: RenderBatchRequest, background_tasks: Back
             "current_clip_index": 0,
             "overall_status": "running",
             "clips": clips_status,
+            "logs": [],
             "zip_url": None,
             "is_merged": True,
             "merged_segments_count": len(request.clips)
@@ -87,6 +88,7 @@ async def start_batch_render(request: RenderBatchRequest, background_tasks: Back
             "current_clip_index": 0,
             "overall_status": "running",
             "clips": clips_status,
+            "logs": [],
             "zip_url": None,
             "is_merged": False
         }

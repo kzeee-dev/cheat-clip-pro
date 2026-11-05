@@ -13,6 +13,7 @@ import urllib.request
 import contextlib
 import tempfile
 import threading
+import queue
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple, Union, Callable
 from PIL import Image, ImageDraw, ImageFont
@@ -3139,6 +3140,97 @@ def check_has_audio(video_path: str) -> bool:
         return True
 
 
+def _run_ffmpeg_with_progress(cmd, timeout, progress_callback, duration):
+    """Run FFmpeg and stream its real progress without blocking on stderr."""
+    progress_cmd = list(cmd)
+    output_index = len(progress_cmd) - 1
+    progress_cmd[output_index:output_index] = [
+        "-progress", "pipe:1", "-stats_period", "1", "-nostats"
+    ]
+
+    stderr_file = tempfile.TemporaryFile(mode="w+t")
+    process = None
+    messages = queue.Queue()
+    metrics = {}
+
+    try:
+        process = subprocess.Popen(
+            progress_cmd,
+            stdout=subprocess.PIPE,
+            stderr=stderr_file,
+            text=True,
+            bufsize=1
+        )
+
+        def read_stdout():
+            try:
+                for line in process.stdout:
+                    messages.put(line.rstrip("\r\n"))
+            finally:
+                messages.put(None)
+
+        reader = threading.Thread(target=read_stdout, daemon=True)
+        reader.start()
+        deadline = time.monotonic() + timeout
+        stream_finished = False
+
+        while not stream_finished:
+            if time.monotonic() >= deadline:
+                process.kill()
+                process.wait()
+                raise subprocess.TimeoutExpired(progress_cmd, timeout)
+
+            try:
+                line = messages.get(timeout=0.5)
+            except queue.Empty:
+                if process.poll() is not None and not reader.is_alive():
+                    break
+                continue
+
+            if line is None:
+                stream_finished = True
+                continue
+
+            if "=" not in line:
+                continue
+
+            key, value = line.split("=", 1)
+            metrics[key] = value
+
+            if key == "progress" and progress_callback:
+                try:
+                    out_time = metrics.get("out_time", "00:00:00.000")
+                    parts = out_time.split(":")
+                    seconds = (
+                        float(parts[-1])
+                        + int(parts[-2]) * 60
+                        + int(parts[-3]) * 3600
+                    ) if len(parts) == 3 else 0.0
+
+                    progress_callback({
+                        "frame": int(metrics.get("frame", 0) or 0),
+                        "fps": float(metrics.get("fps", 0) or 0),
+                        "time": seconds,
+                        "speed": metrics.get("speed", "0x"),
+                        "percent": min(100.0, max(0.0, seconds / max(duration, 0.1) * 100)),
+                        "status": value
+                    })
+                except Exception:
+                    logger.debug("Could not publish FFmpeg progress", exc_info=True)
+
+        returncode = process.wait()
+        stderr_file.seek(0)
+        stderr_text = stderr_file.read()
+        return subprocess.CompletedProcess(
+            progress_cmd, returncode, stdout="", stderr=stderr_text
+        )
+    finally:
+        if process is not None and process.poll() is None:
+            process.kill()
+            process.wait()
+        stderr_file.close()
+
+
 def render_clip_to_mp4(
     video_path: str,
     output_mp4_path: str,
@@ -3178,7 +3270,8 @@ def render_clip_to_mp4(
     hardware_accel: Optional[str] = "auto",
     title_y_percent: Optional[float] = None,
     crop_x_percent: Optional[float] = None,
-    title_x_percent: Optional[float] = 50.0
+    title_x_percent: Optional[float] = 50.0,
+    progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None
 ) -> str:
     """
     Renders the final 1080x1920 short-form video with layout, aspect ratio, titles, subtitles,
@@ -3414,7 +3507,10 @@ def render_clip_to_mp4(
 
     res = None
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=render_timeout)
+        if progress_callback:
+            res = _run_ffmpeg_with_progress(cmd, render_timeout, progress_callback, dur)
+        else:
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=render_timeout)
     except subprocess.TimeoutExpired:
         logger.warning(f"Hardware encoder ({chosen_encoder_name}) timed out after {render_timeout}s.")
         res = None
@@ -3441,7 +3537,10 @@ def render_clip_to_mp4(
             ]
             res_cpu = None
             try:
-                res_cpu = subprocess.run(cpu_cmd, capture_output=True, text=True, timeout=cpu_render_timeout)
+                if progress_callback:
+                    res_cpu = _run_ffmpeg_with_progress(cpu_cmd, cpu_render_timeout, progress_callback, dur)
+                else:
+                    res_cpu = subprocess.run(cpu_cmd, capture_output=True, text=True, timeout=cpu_render_timeout)
             except subprocess.TimeoutExpired:
                 logger.error(f"FFmpeg CPU fallback timed out after {cpu_render_timeout}s.")
                 if os.path.exists(output_mp4_path):
