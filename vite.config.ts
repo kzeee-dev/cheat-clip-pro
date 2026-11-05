@@ -1,3 +1,4 @@
+
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
@@ -6,7 +7,14 @@ export default defineConfig({
   plugins: [react()],
   server: {
     watch: {
-      ignored: ['**/dist_app/**', '**/dist_installer/**', '**/build/**', '**/venv/**']
+      ignored: [
+        '**/.venv/**',
+        '**/node_modules/**',
+        '**/dist_app/**',
+        '**/dist_installer/**',
+        '**/build/**',
+        '**/venv/**',
+      ],
     },
     proxy: {
       '/api': {
@@ -36,7 +44,7 @@ export default defineConfig({
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
       },
-    }
-  }
+    },
+  },
 })
 
