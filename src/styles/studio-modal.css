@@ -1386,3 +1386,60 @@
   color: #94a3b8 !important;
 }
 
+
+/* Mobile viewport overflow fix */
+@media (max-width: 768px) {
+  .modal-backdrop {
+    padding: 0.5rem;
+    align-items: center;
+  }
+
+  .studio-modal-card {
+    width: 100%;
+    max-width: 100%;
+    max-height: 95dvh;
+    min-width: 0;
+  }
+
+  .studio-modal-header {
+    padding: 0.85rem;
+    gap: 0.5rem;
+  }
+
+  .studio-header-title {
+    min-width: 0;
+    gap: 0.5rem;
+  }
+
+  .studio-title-row h2 {
+    font-size: 1rem;
+  }
+
+  .studio-content-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.85rem;
+    padding: 0.75rem;
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .studio-content-grid > *,
+  .studio-controls-col,
+  .studio-section {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .studio-section {
+    padding: 0.85rem;
+  }
+
+  .export-mode-switcher {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .aspect-options-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
