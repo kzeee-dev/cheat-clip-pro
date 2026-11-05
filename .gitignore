@@ -7,6 +7,7 @@
 .env.*
 !.env.template
 !.env.example
+!.env.production
 
 # ─── NODE / FRONTEND ─────────────────────────────────────────
 node_modules/
