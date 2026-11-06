@@ -531,3 +531,55 @@ input[type="radio"]:checked::after {
     max-width: 100%;
   }
 }
+
+/* App-wide Zoom Controls */
+.app-zoom-controls {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid #292538;
+  background: #0d0c13;
+  white-space: nowrap;
+}
+
+.app-zoom-controls button {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 7px;
+  border: 1px solid #393347;
+  background: #171420;
+  color: #e9d5ff;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.app-zoom-controls button:hover:not(:disabled) {
+  border-color: #d946ef;
+  color: #ffffff;
+  background: #29152f;
+}
+
+.app-zoom-controls button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.app-zoom-controls span {
+  min-width: 42px;
+  color: #00ffcc;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+@media (max-width: 768px) {
+  .app-zoom-controls {
+    flex: 0 0 auto;
+    min-height: 34px;
+  }
+}
