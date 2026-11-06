@@ -1,16 +1,17 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
 import { HeatmapTimeline } from './components/HeatmapTimeline';
 import { LanguageSwitcher } from './components/LanguageSwitcher';
-import { ClipStudioSection } from './components/ClipStudioSection';
+const ClipStudioSection = lazy(() => import('./components/ClipStudioSection').then(module => ({ default: module.ClipStudioSection })));
 import { CookiesModal } from './components/CookiesModal';
 import { CookieWarningModal } from './components/CookieWarningModal';
-import { ClipTrimmerModal } from './components/ClipTrimmerModal';
+const ClipTrimmerModal = lazy(() => import('./components/ClipTrimmerModal').then(module => ({ default: module.ClipTrimmerModal })));
 import { AppUpdateModal } from './components/AppUpdateModal';
 import { resilientFetch, apiUrl } from './utils/api';
 import { getStoredCookies, hasStoredCookies } from './utils/cookieUtils';
 import { extractAudioFromVideoClient } from './utils/audioExtractor';
-import { renderClipClientSide, triggerBrowserDownload } from './services/clientRenderer';
-import { renderClipWebCodecs, isWebCodecsGpuSupported } from './services/webcodecsRenderer';
+
+import { triggerBrowserDownload } from './utils/download';
+
 import { isMobileDevice, requestWakeLock, releaseWakeLock } from './utils/deviceUtils';
 import { LayoutMetricsSync } from './utils/layoutMetricsSync';
 import { useLanguage } from './locales';
@@ -56,6 +57,17 @@ declare global {
 
 export default function App() {
   const { t } = useLanguage();
+  const [appZoom, setAppZoom] = useState<number>(() => {
+    const saved = localStorage.getItem('cheat_clip_app_zoom');
+    if (!saved) return 100;
+    const parsed = Number(saved);
+    return Number.isFinite(parsed) && parsed >= 70 && parsed <= 130 ? parsed : 100;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('cheat_clip_app_zoom', String(appZoom));
+  }, [appZoom]);
+
   const [url, setUrl] = useState('');
   const [gdriveUrl, setGdriveUrl] = useState('');
   const [twitchUrl, setTwitchUrl] = useState('');
@@ -425,7 +437,7 @@ export default function App() {
 
     setIsLaunchingRender(true);
 
-    const isClientMode = !isMobileDevice() && (settings.hardwareAccel === 'browser_wasm' || settings.renderEngine === 'client' || (sourceMode === 'upload' && Boolean(uploadedVideoFile)));
+    const isClientMode = settings.hardwareAccel === 'browser_wasm' || (!isMobileDevice() && (settings.hardwareAccel === 'client_gpu' || settings.renderEngine === 'client' || (sourceMode === 'upload' && Boolean(uploadedVideoFile))));
 
     if (isClientMode) {
       try {
@@ -526,6 +538,7 @@ export default function App() {
 
           // Step 2: Render in client browser via GPU Hardware Encoder (WebCodecs) or WASM
           let blob: Blob;
+          const { isWebCodecsGpuSupported, renderClipWebCodecs } = await import('./services/webcodecsRenderer');
           const useWebCodecsGpu = (settings.hardwareAccel === 'client_gpu' || (!settings.hardwareAccel && isWebCodecsGpuSupported())) && isWebCodecsGpuSupported();
 
           if (useWebCodecsGpu) {
@@ -556,6 +569,7 @@ export default function App() {
             } catch (gpuErr) {
               console.warn('[Client GPU] WebCodecs hardware render failed, fallback to WASM engine:', gpuErr);
               // Graceful fallback to WASM engine
+              const { renderClipClientSide } = await import('./services/clientRenderer');
               blob = await renderClipClientSide({
                 videoSourceUrl: rawSourceUrl,
                 startTime: (sourceMode === 'upload' && uploadedVideoFile) ? clip.start_time : undefined,
@@ -581,6 +595,7 @@ export default function App() {
               });
             }
           } else {
+            const { renderClipClientSide } = await import('./services/clientRenderer');
             blob = await renderClipClientSide({
               videoSourceUrl: rawSourceUrl,
               startTime: (sourceMode === 'upload' && uploadedVideoFile) ? clip.start_time : undefined,
@@ -2353,6 +2368,7 @@ export default function App() {
 
       try {
         const rawSourceUrl = URL.createObjectURL(uploadedVideoFile);
+        const { renderClipClientSide } = await import('./services/clientRenderer');
         const blob = await renderClipClientSide({
           videoSourceUrl: rawSourceUrl,
           startTime: clip.start_time,
@@ -2872,6 +2888,7 @@ Transcript:
         </div>
       )}
 
+      <div className="app-zoom-wrapper" style={{ zoom: appZoom / 100 }}>
       {/* Full-Width Cyber Header Bar (johansa.com style - Edge-to-Edge Solid Dark) */}
       <div className="app-header-wrapper">
         <div className="app-header-inner">
@@ -2941,6 +2958,12 @@ Transcript:
                   </span>
                 </button>
               )}
+              <div className="app-zoom-controls" aria-label="Kontrol zoom tampilan">
+                <button type="button" onClick={() => setAppZoom(prev => Math.max(70, prev - 5))} disabled={appZoom <= 70} aria-label="Perkecil tampilan" title="Zoom out">−</button>
+                <span>{appZoom}%</span>
+                <button type="button" onClick={() => setAppZoom(prev => Math.min(130, prev + 5))} disabled={appZoom >= 130} aria-label="Perbesar tampilan" title="Zoom in">+</button>
+                <button type="button" onClick={() => setAppZoom(100)} disabled={appZoom === 100} title="Reset zoom">100%</button>
+              </div>
               <LanguageSwitcher />
               <a
                 href="https://tako.id/johansa"
@@ -6212,6 +6235,7 @@ Transcript:
         {/* Embedded Clip Studio Section with side inline batch progress */}
         {result && (
           <div style={{ display: workflowTab === 'clipper' ? 'block' : 'none' }}>
+            <Suspense fallback={<div style={{ padding: '2rem', textAlign: 'center' }}>Memuat Clip Studio...</div>}>
             <ClipStudioSection
               videoUrl={result.video_url || url}
               videoId={result.video_id}
@@ -6236,11 +6260,15 @@ Transcript:
               onOpenCookiesModal={() => setIsCookiesModalOpen(true)}
               onBackToClips={() => setWorkflowTab('clips')}
             />
+            </Suspense>
           </div>
         )}
 
         {/* Viewport and Hardware Metrics Sync Pipeline */}
         <LayoutMetricsSync />
+
+        </div>
+      </div>
 
         {/* Transcript Language Confirmation Notice Modal before Hack Clips */}
         {showLanguageConfirmModal && (
@@ -6395,22 +6423,26 @@ Transcript:
         />
 
         {/* Clip Trimmer & Context Editor Modal */}
-        <ClipTrimmerModal
-          isOpen={Boolean(trimmerClip)}
-          clip={trimmerClip}
-          videoId={result?.video_id || ''}
-          videoUrl={result?.video_url}
-          sourceType={result?.source_type}
-          videoTitle={result?.title}
-          videoDuration={result?.duration || 0}
-          transcript={result?.transcript}
-          onClose={() => setTrimmerClip(null)}
-          onApply={handleApplyAdjustedClipToResults}
-          onDownload={async (adjustedClip) => {
-            handleApplyAdjustedClipToResults(adjustedClip);
-            await handleDownloadRawClip(adjustedClip);
-          }}
-        />
+        {trimmerClip && (
+          <Suspense fallback={<div style={{ padding: '1rem', textAlign: 'center' }}>Memuat Clip Trimmer...</div>}>
+            <ClipTrimmerModal
+              isOpen={true}
+              clip={trimmerClip}
+              videoId={result?.video_id || ''}
+              videoUrl={result?.video_url}
+              sourceType={result?.source_type}
+              videoTitle={result?.title}
+              videoDuration={result?.duration || 0}
+              transcript={result?.transcript}
+              onClose={() => setTrimmerClip(null)}
+              onApply={handleApplyAdjustedClipToResults}
+              onDownload={async (adjustedClip) => {
+                handleApplyAdjustedClipToResults(adjustedClip);
+                await handleDownloadRawClip(adjustedClip);
+              }}
+            />
+          </Suspense>
+        )}
 
         {/* Global Fancy Clear Temp Confirmation Modal */}
         {showGlobalClearModal && (
@@ -6466,7 +6498,6 @@ Transcript:
             </div>
           </div>
         )}
-      </div>
     </>
   );
 }
