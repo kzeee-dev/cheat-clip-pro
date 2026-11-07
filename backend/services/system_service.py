@@ -191,6 +191,13 @@ def auto_cleanup_expired_files(
                 "ttl_deleted_bytes": 0,
                 "quota_deleted_files": 0,
                 "quota_deleted_bytes": 0,
+                "total_cleaned_files": 0,
+                "total_cleaned_bytes": 0,
+                "total_cleaned_mb": 0.0,
+                "remaining_storage_bytes": 0,
+                "remaining_storage_mb": 0.0,
+                "max_age_seconds": max_age_seconds,
+                "max_storage_bytes": max_storage_bytes,
             }
     except Exception as exc:
         # Fail closed: never risk deleting media if job state is unavailable.
@@ -203,6 +210,13 @@ def auto_cleanup_expired_files(
             "ttl_deleted_bytes": 0,
             "quota_deleted_files": 0,
             "quota_deleted_bytes": 0,
+            "total_cleaned_files": 0,
+            "total_cleaned_bytes": 0,
+            "total_cleaned_mb": 0.0,
+            "remaining_storage_bytes": 0,
+            "remaining_storage_mb": 0.0,
+            "max_age_seconds": max_age_seconds,
+            "max_storage_bytes": max_storage_bytes,
         }
 
     # Only disposable temporary directories are eligible for automatic deletion.
