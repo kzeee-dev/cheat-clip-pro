@@ -1207,7 +1207,20 @@ def download_full_raw_video(
 
     if local_source and local_source.exists():
         logger.info(f"Copying local source video to raw output: {local_source} -> {output_path}")
+        if not is_valid_mp4(local_source):
+            raise RuntimeError(
+                f"Local source video is invalid or incomplete: {local_source.name}. "
+                "Please re-upload or re-analyze the source video."
+            )
         shutil.copyfile(str(local_source), str(output_path))
+        if not is_valid_mp4(output_path):
+            try:
+                os.unlink(output_path)
+            except OSError:
+                pass
+            raise RuntimeError(
+                "Copied local video failed MP4 validation. Please retry or re-upload the source."
+            )
         if progress_callback:
             progress_callback({"percent": 100.0, "downloaded": "Complete", "total": "Complete", "speed": "", "eta": ""})
         return str(output_path)
