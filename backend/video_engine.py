@@ -1377,7 +1377,7 @@ def download_full_raw_video(
                         pass
                 if "idle" in timeout_reason:
                     raise RuntimeError(
-                        f"Video download stalled: no data received for {idle_timeout} seconds. "
+                        f"Video download timed out after {idle_timeout} seconds without receiving data. "
                         "Check the internet connection and retry."
                     )
                 raise RuntimeError(
