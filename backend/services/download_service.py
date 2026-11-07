@@ -66,7 +66,20 @@ async def run_raw_download_job(
 
         if local_src and os.path.exists(local_src):
             logger.info(f"Serving local/gdrive video {local_src} directly as full download {out_path}")
+            if not is_valid_mp4(local_src):
+                raise RuntimeError(
+                    f"Local source video is invalid or incomplete: {os.path.basename(local_src)}. "
+                    "Please re-upload or re-analyze the source video."
+                )
             shutil.copy2(local_src, out_path)
+            if not is_valid_mp4(out_path):
+                try:
+                    os.unlink(out_path)
+                except OSError:
+                    pass
+                raise RuntimeError(
+                    "Copied local video failed MP4 validation. Please retry or re-upload the source."
+                )
             raw_download_jobs[job_id]["status"] = "ready"
             raw_download_jobs[job_id]["progress_percent"] = 100.0
             dl_name = download_title or filename
