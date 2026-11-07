@@ -521,10 +521,9 @@ def get_yt_dlp_base_cmd(
     return cmd
 
 
-def is_valid_mp4(file_path: Union[str, Path]) -> bool:
+def is_valid_mp4(file_path: Union[str, Path], decode_check: bool = False) -> bool:
     """
-    Validate that an MP4 exists, has a video stream, and has valid duration.
-    Audio is optional because silent audio may be added during merged rendering.
+    Validate MP4 metadata and optionally fully decode video/audio streams.
     """
     p = Path(file_path)
 
@@ -548,7 +547,6 @@ def is_valid_mp4(file_path: Union[str, Path]) -> bool:
         if res.returncode != 0:
             return False
 
-        import json
         data = json.loads(res.stdout or "{}")
         streams = data.get("streams", [])
         duration = float(data.get("format", {}).get("duration", 0) or 0)
@@ -558,12 +556,44 @@ def is_valid_mp4(file_path: Union[str, Path]) -> bool:
             for stream in streams
         )
 
-        return has_video and duration > 0.05
+        if not (has_video and duration > 0.05):
+            return False
 
+        if not decode_check:
+            return True
+
+        decode_cmd = [
+            "ffmpeg", "-nostdin", "-hide_banner",
+            "-v", "error", "-xerror",
+            "-i", str(p),
+            "-map", "0:v:0",
+            "-map", "0:a?",
+            "-f", "null", "-"
+        ]
+
+        decode_timeout = max(90, min(900, int(duration * 4) + 30))
+        decode_res = subprocess.run(
+            decode_cmd,
+            capture_output=True,
+            text=True,
+            timeout=decode_timeout
+        )
+
+        if decode_res.returncode != 0:
+            logger.warning(
+                f"MP4 decode validation failed for {p.name}: "
+                f"{decode_res.stderr[-1000:]!r}"
+            )
+            return False
+
+        return True
+
+    except subprocess.TimeoutExpired:
+        logger.warning(f"MP4 validation timed out for {p.name}")
+        return False
     except Exception as exc:
         logger.debug(f"MP4 validation failed for {p.name}: {exc}")
         return False
-
 
 def get_video_file_metadata(file_path: Union[str, Path]) -> Dict[str, Any]:
     """
@@ -889,7 +919,7 @@ def download_clip_segment(
             str(output_path)
         ]
         res = subprocess.run(slice_cmd, capture_output=True, text=True, timeout=slice_timeout)
-        if output_path.exists() and is_valid_mp4(output_path):
+        if output_path.exists() and is_valid_mp4(output_path, decode_check=True):
             return str(output_path)
         if output_path.exists():
             try:
@@ -958,7 +988,7 @@ def download_clip_segment(
             ]
             try:
                 res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_sec)
-                if res.returncode == 0 and is_valid_mp4(output_path):
+                if res.returncode == 0 and is_valid_mp4(output_path, decode_check=True):
                     logger.info(f"Successfully downloaded section ({mode_label}): {output_path} ({output_path.stat().st_size} bytes)")
                     return str(output_path)
                 # If not valid or returncode != 0, clean up any incomplete/corrupt partial file immediately
@@ -1027,7 +1057,7 @@ def download_clip_segment(
                         str(output_path)
                     ]
                     trim_res = subprocess.run(trim_cmd, capture_output=True, text=True, timeout=trim_timeout)
-                    if trim_res.returncode == 0 and is_valid_mp4(output_path):
+                    if trim_res.returncode == 0 and is_valid_mp4(output_path, decode_check=True):
                         logger.info(f"Successfully trimmed stream URLs with FFmpeg ({mode_label}): {output_path} ({output_path.stat().st_size} bytes)")
                         return str(output_path)
                     else:
@@ -1070,7 +1100,7 @@ def download_clip_segment(
                 ]
                 timeout_720p = max(200, min(600, int(clip_duration * 4) + 60))
                 res_720p = subprocess.run(cmd_720p, capture_output=True, text=True, timeout=timeout_720p)
-                if res_720p.returncode == 0 and is_valid_mp4(output_path):
+                if res_720p.returncode == 0 and is_valid_mp4(output_path, decode_check=True):
                     logger.info(f"Successfully downloaded 720p fallback section ({mode_label}): {output_path} ({output_path.stat().st_size} bytes)")
                     return str(output_path)
                 if output_path.exists():
@@ -1113,7 +1143,7 @@ def download_clip_segment(
                 ]
                 timeout_480p = max(150, min(450, int(clip_duration * 3) + 45))
                 res_480p = subprocess.run(cmd_480p, capture_output=True, text=True, timeout=timeout_480p)
-                if res_480p.returncode == 0 and is_valid_mp4(output_path):
+                if res_480p.returncode == 0 and is_valid_mp4(output_path, decode_check=True):
                     logger.info(f"Successfully downloaded 480p fallback section ({mode_label}): {output_path} ({output_path.stat().st_size} bytes)")
                     return str(output_path)
                 if output_path.exists():
