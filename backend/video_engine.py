@@ -523,61 +523,46 @@ def get_yt_dlp_base_cmd(
 
 def is_valid_mp4(file_path: Union[str, Path]) -> bool:
     """
-    Checks if an MP4 file exists, is non-empty, and has a valid moov atom / container header
-    that FFmpeg or ffprobe can read without errors.
+    Validate that an MP4 exists, has a video stream, and has valid duration.
+    Audio is optional because silent audio may be added during merged rendering.
     """
     p = Path(file_path)
+
     if not p.exists():
         return False
-    try:
-        size = p.stat().st_size
-        if size < 10000:
-            return False
-    except Exception:
-        return False
 
-    # Check using ffprobe if available
     try:
+        if p.stat().st_size < 10000:
+            return False
+
         probe_cmd = [
             "ffprobe", "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
-            str(p)
+            "-show_entries", "stream=codec_type:format=duration",
+            "-of", "json",
+            str(p),
         ]
-        res = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=8)
-        if res.returncode == 0 and res.stdout.strip():
-            try:
-                dur = float(res.stdout.strip())
-                if dur > 0.05:
-                    return True
-            except Exception:
-                return True
-        err = (res.stderr or "").lower()
-        if "moov atom not found" in err or "invalid data" in err:
-            return False
-    except FileNotFoundError:
-        pass
-    except Exception:
-        pass
+        res = subprocess.run(
+            probe_cmd, capture_output=True, text=True, timeout=15
+        )
 
-    # Fallback check using ffmpeg
-    try:
-        ffmpeg_cmd = [
-            "ffmpeg", "-v", "error",
-            "-i", str(p),
-            "-t", "0.1",
-            "-f", "null", "-"
-        ]
-        res = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=8)
-        if res.returncode == 0:
-            return True
-        err = (res.stderr or "").lower()
-        if "moov atom not found" in err or "invalid data" in err:
+        if res.returncode != 0:
             return False
-    except Exception:
-        pass
 
-    return False
+        import json
+        data = json.loads(res.stdout or "{}")
+        streams = data.get("streams", [])
+        duration = float(data.get("format", {}).get("duration", 0) or 0)
+
+        has_video = any(
+            stream.get("codec_type") == "video"
+            for stream in streams
+        )
+
+        return has_video and duration > 0.05
+
+    except Exception as exc:
+        logger.debug(f"MP4 validation failed for {p.name}: {exc}")
+        return False
 
 
 def get_video_file_metadata(file_path: Union[str, Path]) -> Dict[str, Any]:
