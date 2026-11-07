@@ -1300,7 +1300,7 @@ def download_full_raw_video(
                 raw_line = line.strip()
                 if not raw_line:
                     continue
-                clean_line = re.sub(r'\\x1b\\[[0-9;]*[a-zA-Z]', '', raw_line).strip()
+                clean_line = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', raw_line).strip()
 
                 if clean_line.startswith("download:") and progress_callback:
                     raw_data = clean_line[len("download:"):].strip()
@@ -1320,15 +1320,15 @@ def download_full_raw_video(
                             "eta": eta_str.strip() if eta_str and eta_str != "NA" else ""
                         })
                 elif "[download]" in clean_line and progress_callback:
-                    match = re.search(r'([0-9]+(?:\\.[0-9]+)?)\\s*%', clean_line)
+                    match = re.search(r'([0-9]+(?:\.[0-9]+)?)\s*%', clean_line)
                     if match:
                         try:
                             pct_val = float(match.group(1))
                         except Exception:
                             pct_val = 0.0
-                        spd_match = re.search(r'at\\s+([0-9.]+\\s*[a-zA-Z]+/s)', clean_line)
-                        eta_match = re.search(r'ETA\\s+([0-9:]+)', clean_line)
-                        tot_match = re.search(r'of\\s+~?([0-9.]+\\s*[a-zA-Z]+)', clean_line)
+                        spd_match = re.search(r'at\s+([0-9.]+\s*[a-zA-Z]+/s)', clean_line)
+                        eta_match = re.search(r'ETA\s+([0-9:]+)', clean_line)
+                        tot_match = re.search(r'of\s+~?([0-9.]+\s*[a-zA-Z]+)', clean_line)
                         progress_callback({
                             "percent": pct_val,
                             "downloaded": f"{pct_val:.1f}%",
