@@ -1238,12 +1238,69 @@ def download_full_raw_video(
             ]
             logger.info(f"Downloading full raw video ({mode_label}) from {clean_url} to {output_path}...")
 
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-            for line in iter(process.stdout.readline, ''):
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+
+            # Drain stdout on a dedicated thread so a stalled network request
+            # cannot block the event loop worker forever inside readline().
+            output_queue: queue.Queue = queue.Queue()
+
+            def _read_download_output():
+                try:
+                    if process.stdout is not None:
+                        for output_line in iter(process.stdout.readline, ""):
+                            output_queue.put(output_line)
+                finally:
+                    output_queue.put(None)
+
+            reader = threading.Thread(
+                target=_read_download_output,
+                name=f"yt-dlp-log-{Path(output_path).name}",
+                daemon=True,
+            )
+            reader.start()
+
+            total_timeout = max(
+                300,
+                int(os.environ.get("CHEAT_CLIP_RAW_DOWNLOAD_TIMEOUT", "21600")),
+            )
+            idle_timeout = max(
+                60,
+                int(os.environ.get("CHEAT_CLIP_DOWNLOAD_IDLE_TIMEOUT", "300")),
+            )
+            started_at = time.monotonic()
+            last_output_at = started_at
+            reader_finished = False
+            timeout_reason = None
+
+            while not reader_finished:
+                elapsed = time.monotonic() - started_at
+                if elapsed >= total_timeout:
+                    timeout_reason = f"total download timeout ({total_timeout}s)"
+                    break
+
+                try:
+                    line = output_queue.get(timeout=min(1.0, total_timeout - elapsed))
+                except queue.Empty:
+                    if time.monotonic() - last_output_at >= idle_timeout:
+                        timeout_reason = f"no yt-dlp output for {idle_timeout}s"
+                        break
+                    continue
+
+                if line is None:
+                    reader_finished = True
+                    break
+
+                last_output_at = time.monotonic()
                 raw_line = line.strip()
                 if not raw_line:
                     continue
-                clean_line = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', raw_line).strip()
+                clean_line = re.sub(r'\\x1b\\[[0-9;]*[a-zA-Z]', '', raw_line).strip()
 
                 if clean_line.startswith("download:") and progress_callback:
                     raw_data = clean_line[len("download:"):].strip()
@@ -1263,15 +1320,15 @@ def download_full_raw_video(
                             "eta": eta_str.strip() if eta_str and eta_str != "NA" else ""
                         })
                 elif "[download]" in clean_line and progress_callback:
-                    match = re.search(r'([0-9]+(?:\.[0-9]+)?)\s*%', clean_line)
+                    match = re.search(r'([0-9]+(?:\\.[0-9]+)?)\\s*%', clean_line)
                     if match:
                         try:
                             pct_val = float(match.group(1))
                         except Exception:
                             pct_val = 0.0
-                        spd_match = re.search(r'at\s+([0-9.]+\s*[a-zA-Z]+/s)', clean_line)
-                        eta_match = re.search(r'ETA\s+([0-9:]+)', clean_line)
-                        tot_match = re.search(r'of\s+~?([0-9.]+\s*[a-zA-Z]+)', clean_line)
+                        spd_match = re.search(r'at\\s+([0-9.]+\\s*[a-zA-Z]+/s)', clean_line)
+                        eta_match = re.search(r'ETA\\s+([0-9:]+)', clean_line)
+                        tot_match = re.search(r'of\\s+~?([0-9.]+\\s*[a-zA-Z]+)', clean_line)
                         progress_callback({
                             "percent": pct_val,
                             "downloaded": f"{pct_val:.1f}%",
@@ -1279,15 +1336,82 @@ def download_full_raw_video(
                             "speed": spd_match.group(1) if spd_match else "",
                             "eta": eta_match.group(1) if eta_match else ""
                         })
-            process.stdout.close()
-            returncode = process.wait()
 
-            if os.path.exists(output_path) and os.path.getsize(output_path) > 10000:
-                logger.info(f"Full raw video downloaded successfully ({mode_label}, {os.path.getsize(output_path)} bytes)")
+            if timeout_reason:
+                logger.warning(
+                    f"Full raw video download stopped for {clean_url} ({mode_label}): {timeout_reason}"
+                )
+                try:
+                    process.terminate()
+                    process.wait(timeout=5)
+                except Exception:
+                    try:
+                        process.kill()
+                    except Exception:
+                        pass
+                    try:
+                        process.wait(timeout=5)
+                    except Exception:
+                        pass
+                if process.stdout:
+                    try:
+                        process.stdout.close()
+                    except Exception:
+                        pass
+                reader.join(timeout=1)
+                if os.path.exists(output_path):
+                    try:
+                        os.unlink(output_path)
+                    except Exception:
+                        pass
+                if "idle" in timeout_reason:
+                    raise RuntimeError(
+                        f"Video download stalled: no data received for {idle_timeout} seconds. "
+                        "Check the internet connection and retry."
+                    )
+                raise RuntimeError(
+                    f"Video download exceeded the maximum allowed time ({total_timeout} seconds)."
+                )
+
+            try:
+                returncode = process.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+                if os.path.exists(output_path):
+                    try:
+                        os.unlink(output_path)
+                    except Exception:
+                        pass
+                raise RuntimeError("Video download process did not exit after closing its output stream.")
+
+            reader.join(timeout=1)
+            if process.stdout:
+                process.stdout.close()
+
+            if (
+                returncode == 0
+                and os.path.exists(output_path)
+                and os.path.getsize(output_path) > 10000
+                and is_valid_mp4(output_path)
+            ):
+                logger.info(
+                    f"Full raw video downloaded successfully ({mode_label}, "
+                    f"{os.path.getsize(output_path)} bytes)"
+                )
                 return str(output_path)
 
+            if os.path.exists(output_path):
+                try:
+                    os.unlink(output_path)
+                except Exception:
+                    pass
+
             if use_cookies:
-                logger.warning(f"Full raw video download with cookies exited with code {returncode}. Retrying in guest mode...")
+                logger.warning(
+                    f"Full raw video download with cookies exited with code {returncode} "
+                    "or produced an invalid MP4. Retrying in guest mode..."
+                )
 
     raise RuntimeError("Failed to download raw video. Please check your cookies or network connection.")
 
