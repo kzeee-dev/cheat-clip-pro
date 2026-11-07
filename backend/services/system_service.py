@@ -163,7 +163,7 @@ def auto_cleanup_expired_files(
     """
     import time
     base_dir = Path(_base_dir)
-    from backend.config import TEMP_DIR
+    from backend.config import TEMP_DIR, UPLOADS_DIR
 
     # Never clean while a media job may still be reading or writing files.
     # Lazy imports avoid module-import cycles.
@@ -222,6 +222,18 @@ def auto_cleanup_expired_files(
     # Only disposable temporary directories are eligible for automatic deletion.
     # Completed exports and user uploads are intentionally excluded.
     target_dirs = [TEMP_DIR, base_dir / "temp"]
+
+    uploads_root = UPLOADS_DIR.resolve()
+
+    def is_disposable_file(item: Path) -> bool:
+        try:
+            resolved = item.resolve()
+            if resolved == uploads_root or uploads_root in resolved.parents:
+                return False
+            return not is_protected_system_file(item)
+        except Exception:
+            # Fail closed when a path cannot be safely resolved.
+            return False
     now = time.time()
     cutoff_time = now - max_age_seconds
 
@@ -235,7 +247,7 @@ def auto_cleanup_expired_files(
         if not target.exists() or not target.is_dir():
             continue
         for item in list(target.rglob("*")):
-            if item.is_file() and not is_protected_system_file(item):
+            if item.is_file() and is_disposable_file(item):
                 try:
                     mtime = item.stat().st_mtime
                     if mtime < cutoff_time:
@@ -286,7 +298,14 @@ def auto_cleanup_expired_files(
     for target in target_dirs:
         if target.exists() and target.is_dir():
             for item in sorted(list(target.rglob("*")), key=lambda p: len(p.parts), reverse=True):
-                if item.is_dir() and item != target and item.name != "frames" and not is_protected_system_file(item):
+                if (
+                    item.is_dir()
+                    and item != target
+                    and item.name != "frames"
+                    and item.resolve() != uploads_root
+                    and uploads_root not in item.resolve().parents
+                    and not is_protected_system_file(item)
+                ):
                     try:
                         if not any(item.iterdir()):
                             item.rmdir()
