@@ -1025,6 +1025,12 @@ def download_clip_segment(
                         pass
                 last_err_snippet = str(e)
 
+            # Stop the fallback chain as soon as its shared budget is exhausted.
+            remaining_budget = int(overall_deadline - time.monotonic())
+            if remaining_budget <= 0:
+                last_err_snippet = f"overall download timeout: budget exhausted after {overall_timeout}s"
+                break
+
             # Method 2: Fallback - Extract direct stream URLs with yt-dlp and slice using FFmpeg with network reconnect
             logger.info(f"Direct section download fallback ({last_err_snippet}), trying stream URL trimming with auto-reconnect ({mode_label})...")
             try:
@@ -1086,6 +1092,11 @@ def download_clip_segment(
                         pass
                 last_err_snippet = str(e)
 
+            remaining_budget = int(overall_deadline - time.monotonic())
+            if remaining_budget <= 0:
+                last_err_snippet = f"overall download timeout: budget exhausted after {overall_timeout}s"
+                break
+
             # Method 3: Fallback - Download at 720p (vastly lower bandwidth, skips SABR/1080p throttling)
             logger.info(f"Method 3: Attempting fast 720p fallback section download for {clean_url} ({mode_label})...")
             try:
@@ -1128,6 +1139,11 @@ def download_clip_segment(
                     except Exception:
                         pass
                 last_err_snippet = str(e)
+
+            remaining_budget = int(overall_deadline - time.monotonic())
+            if remaining_budget <= 0:
+                last_err_snippet = f"overall download timeout: budget exhausted after {overall_timeout}s"
+                break
 
             # Method 4: Fallback - Download at 480p / lowest bandwidth (guaranteed to succeed on high lag)
             logger.info(f"Method 4: Attempting low-bandwidth 480p fallback section download for {clean_url} ({mode_label})...")
