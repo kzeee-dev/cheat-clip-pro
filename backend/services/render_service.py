@@ -59,6 +59,14 @@ def _ensure_concat_streams(file_path: str) -> bool:
         probe_cmd, capture_output=True, text=True, timeout=15
     )
 
+    file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+    logger.warning(
+        f"SEGMENT DIAGNOSTIC | file={Path(file_path).name} "
+        f"| size={file_size} | ffprobe_rc={probe.returncode} "
+        f"| streams={probe.stdout.strip()!r} "
+        f"| stderr={probe.stderr[-1000:]!r}"
+    )
+
     if probe.returncode != 0:
         raise RuntimeError(
             f"ffprobe gagal memeriksa segmen: {probe.stderr[-1500:]}"
@@ -498,8 +506,23 @@ async def render_merged_batch_clips(
             filter_parts = []
             for idx_p, p in enumerate(part_paths):
                 inputs.extend(["-i", p])
-                filter_parts.append(f"[{idx_p}:v][{idx_p}:a]")
-            filter_str = f"{''.join(filter_parts)}concat=n={len(part_paths)}:v=1:a=1[v][a]"
+                filter_parts.append(
+                    f"[{idx_p}:v]"
+                    f"scale=1280:720:force_original_aspect_ratio=decrease,"
+                    f"pad=1280:720:(ow-iw)/2:(oh-ih)/2,"
+                    f"setsar=1,fps=30,format=yuv420p"
+                    f"[v{idx_p}];"
+                    f"[{idx_p}:a]aresample=async=1:first_pts=0[a{idx_p}]"
+                )
+
+            concat_inputs = "".join(
+                f"[v{idx_p}][a{idx_p}]"
+                for idx_p in range(len(part_paths))
+            )
+            filter_str = (
+                f"{''.join(filter_parts)}"
+                f"{concat_inputs}concat=n={len(part_paths)}:v=1:a=1[v][a]"
+            )
             concat_cmd = [
                 "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                 *inputs,
