@@ -1,3 +1,4 @@
+from pathlib import Path
 import asyncio
 import logging
 import os
@@ -44,6 +45,77 @@ def add_render_log(batch_id: str, message: str, level: str = "info", clip_index:
 
     if len(logs) > 300:
         del logs[:-300]
+
+
+def _ensure_concat_streams(file_path: str) -> bool:
+    """Ensure a segment has video and audio before merged concat."""
+    probe_cmd = [
+        "ffprobe", "-v", "error",
+        "-show_entries", "stream=codec_type",
+        "-of", "csv=p=0",
+        file_path,
+    ]
+    probe = subprocess.run(
+        probe_cmd, capture_output=True, text=True, timeout=15
+    )
+
+    if probe.returncode != 0:
+        raise RuntimeError(
+            f"ffprobe gagal memeriksa segmen: {probe.stderr[-1500:]}"
+        )
+
+    stream_types = {
+        line.strip() for line in probe.stdout.splitlines() if line.strip()
+    }
+
+    if "video" not in stream_types:
+        raise RuntimeError(
+            f"Segmen tidak memiliki video stream: {Path(file_path).name}"
+        )
+
+    if "audio" in stream_types:
+        return False
+
+    temp_path = str(Path(file_path).with_name(
+        Path(file_path).stem + "_audiofix.mp4"
+    ))
+
+    try:
+        cmd = [
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-i", file_path,
+            "-f", "lavfi", "-i",
+            "anullsrc=channel_layout=stereo:sample_rate=48000",
+            "-map", "0:v:0", "-map", "1:a:0",
+            "-c:v", "copy",
+            "-c:a", "aac", "-b:a", "192k",
+            "-shortest",
+            "-movflags", "+faststart",
+            temp_path,
+        ]
+
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=180
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"Gagal menambahkan silent audio: {result.stderr[-2000:]}"
+            )
+
+        if not is_valid_mp4(temp_path):
+            raise RuntimeError("Hasil perbaikan audio tidak valid.")
+
+        os.replace(temp_path, file_path)
+        logger.info(
+            f"Silent audio ditambahkan ke segmen {Path(file_path).name}"
+        )
+        return True
+
+    finally:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+
 
 
 async def render_single_batch_clip(
@@ -412,6 +484,16 @@ async def render_merged_batch_clips(
         if len(part_paths) == 1:
             raw_merged_path = part_paths[0]
         else:
+            for idx_p, segment_path in enumerate(part_paths):
+                add_render_log(
+                    batch_id,
+                    f"Merged: memeriksa stream segmen {idx_p + 1}/{len(part_paths)}",
+                    clip_index=0,
+                )
+                await asyncio.to_thread(
+                    _ensure_concat_streams, segment_path
+                )
+
             inputs = []
             filter_parts = []
             for idx_p, p in enumerate(part_paths):
@@ -431,7 +513,24 @@ async def render_merged_batch_clips(
             ]
             concat_timeout = max(180, total_segments * 60)
             logger.info(f"Concatenating {len(part_paths)} segments into {raw_merged_path}")
-            await asyncio.to_thread(subprocess.run, concat_cmd, check=True, timeout=concat_timeout)
+            concat_result = await asyncio.to_thread(
+                subprocess.run,
+                concat_cmd,
+                capture_output=True,
+                text=True,
+                timeout=concat_timeout,
+                check=False,
+            )
+            if concat_result.returncode != 0:
+                ffmpeg_error = (
+                    concat_result.stderr
+                    or concat_result.stdout
+                    or "Tidak ada detail error dari FFmpeg"
+                ).strip()
+                raise RuntimeError(
+                    f"FFmpeg concat gagal (exit {concat_result.returncode}): "
+                    f"{ffmpeg_error[-4000:]}"
+                )
             add_render_log(batch_id, "Merged: seluruh segmen berhasil digabung", level="success", clip_index=0)
 
         add_render_log(batch_id, "Merged: mulai transkripsi dan pembuatan subtitle", clip_index=0)
