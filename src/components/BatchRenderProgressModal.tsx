@@ -87,7 +87,7 @@ export const BatchRenderProgressModal: React.FC<BatchRenderProgressModalProps> =
                     <span className={`${styles.statusBadge} ${styles.badgeSuccess}`}>{t.batchProgress.statusDone}</span>
                     {clip.download_url && (
                       <a
-                        href={apiUrl(clip.download_url)}
+                        href={apiUrl(clip.download_url || '')}
                         download
                         className={styles.btnDownloadClip}
                         title={t.batchProgress.downloadMp4Tooltip}
@@ -97,7 +97,9 @@ export const BatchRenderProgressModal: React.FC<BatchRenderProgressModalProps> =
                           // ignoring the download attribute on cross-origin MP4 links.
                           event.preventDefault();
                           try {
-                            const response = await fetch(apiUrl(clip.download_url));
+                            const downloadPath = clip.download_url;
+                            if (!downloadPath) throw new Error('URL download MP4 tidak tersedia.');
+                            const response = await fetch(apiUrl(downloadPath));
                             if (!response.ok) {
                               const detail = await response.text().catch(() => '');
                               throw new Error(detail || `HTTP ${response.status}`);
