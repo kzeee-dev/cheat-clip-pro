@@ -60,7 +60,7 @@ def _ensure_concat_streams(file_path: str) -> bool:
     )
 
     file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
-    logger.warning(
+    logger.info(
         f"SEGMENT DIAGNOSTIC | file={Path(file_path).name} "
         f"| size={file_size} | ffprobe_rc={probe.returncode} "
         f"| streams={probe.stdout.strip()!r} "
@@ -360,6 +360,7 @@ async def render_single_batch_clip(
         clip_status["output_path"] = out_path
 
     except Exception as e:
+        failed_phase = clip_status.get("status")
         add_render_log(batch_id, f"Clip {idx + 1}: ERROR - {e}", level="error", clip_index=idx)
         logger.error(f"Error rendering clip {idx} in batch {batch_id}: {e}")
         clip_status["status"] = "error"
@@ -367,7 +368,7 @@ async def render_single_batch_clip(
         if "moov atom not found" in err_msg.lower():
             err_msg = "Download interrupted by internet lag ('moov atom not found'). Click Retry to re-download."
         elif "timed out" in err_msg.lower() or "timeout" in err_msg.lower():
-            if clip_status.get("status") == "rendering":
+            if failed_phase == "rendering":
                 err_msg = "Video rendering timed out. Try switching to 'Universal CPU (libx264)' in Studio Settings or retry."
             else:
                 err_msg = "Video download timed out due to slow/laggy internet connection. Click Retry to try again."
@@ -512,7 +513,8 @@ async def render_merged_batch_clips(
                     f"pad=1280:720:(ow-iw)/2:(oh-ih)/2,"
                     f"setsar=1,fps=30,format=yuv420p"
                     f"[v{idx_p}];"
-                    f"[{idx_p}:a]aresample=async=1:first_pts=0[a{idx_p}]"
+                    f"[{idx_p}:a]aresample=48000:async=1:first_pts=0,"
+                    f"aformat=sample_fmts=fltp:channel_layouts=stereo[a{idx_p}];"
                 )
 
             concat_inputs = "".join(
