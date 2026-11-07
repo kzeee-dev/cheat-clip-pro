@@ -973,7 +973,7 @@ def download_clip_segment(
         for use_cookies in attempts:
             remaining = int(overall_deadline - time.monotonic())
             if remaining <= 0:
-                last_err_snippet = f"overall download budget exhausted after {overall_timeout}s"
+                last_err_snippet = f"overall download timeout: budget exhausted after {overall_timeout}s"
                 break
 
             mode_label = "with cookies" if use_cookies else "guest mode (without cookies)"
