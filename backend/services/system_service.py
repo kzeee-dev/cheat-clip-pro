@@ -156,16 +156,58 @@ def auto_cleanup_expired_files(
 ) -> dict:
     """
     Automated dual-mode cleanup engine:
-    1. Option 1 (Time-based TTL): Deletes temp/export/upload files older than max_age_seconds (default 1 hour).
+    1. Option 1 (Time-based TTL): Deletes disposable temporary files older than max_age_seconds (default 1 hour).
     2. Option 2 (Storage Quota Ceiling): If total storage exceeds max_storage_bytes (default 5 GB),
        purges oldest files first (FIFO by mtime) down to target_reduction_ratio (default 80% = 4 GB).
     Strictly preserves cookies and custom fonts.
     """
     import time
     base_dir = Path(_base_dir)
-    from backend.config import EXPORTS_DIR, TEMP_DIR, UPLOADS_DIR
+    from backend.config import TEMP_DIR
 
-    target_dirs = [TEMP_DIR, base_dir / "temp", UPLOADS_DIR, EXPORTS_DIR]
+    # Never clean while a media job may still be reading or writing files.
+    # Lazy imports avoid module-import cycles.
+    try:
+        from backend.services.download_service import raw_download_jobs, raw_clip_download_jobs
+        from backend.services.render_service import RENDER_BATCHES
+
+        active_states = {"starting", "running", "downloading", "transcribing", "rendering"}
+        active_downloads = any(
+            job.get("status") in active_states
+            for registry in (raw_download_jobs, raw_clip_download_jobs)
+            for job in registry.values()
+        )
+        active_renders = any(
+            batch.get("overall_status") == "running"
+            for batch in RENDER_BATCHES.values()
+        )
+        if active_downloads or active_renders:
+            logger.info("[Auto-Cleanup] Skipped: active download/render jobs detected.")
+            return {
+                "success": True,
+                "skipped": True,
+                "reason": "active_media_jobs",
+                "ttl_deleted_files": 0,
+                "ttl_deleted_bytes": 0,
+                "quota_deleted_files": 0,
+                "quota_deleted_bytes": 0,
+            }
+    except Exception as exc:
+        # Fail closed: never risk deleting media if job state is unavailable.
+        logger.warning(f"[Auto-Cleanup] Skipped because active-job safety check failed: {exc}")
+        return {
+            "success": False,
+            "skipped": True,
+            "reason": "active_job_check_failed",
+            "ttl_deleted_files": 0,
+            "ttl_deleted_bytes": 0,
+            "quota_deleted_files": 0,
+            "quota_deleted_bytes": 0,
+        }
+
+    # Only disposable temporary directories are eligible for automatic deletion.
+    # Completed exports and user uploads are intentionally excluded.
+    target_dirs = [TEMP_DIR, base_dir / "temp"]
     now = time.time()
     cutoff_time = now - max_age_seconds
 
@@ -208,7 +250,7 @@ def auto_cleanup_expired_files(
 
     if total_current_bytes > max_storage_bytes:
         logger.warning(
-            f"[Auto-Cleanup] Total temp storage ({round(total_current_bytes / (1024**3), 2)} GB) "
+            f"[Auto-Cleanup] Total disposable temp storage ({round(total_current_bytes / (1024**3), 2)} GB) "
             f"exceeds quota ceiling ({round(max_storage_bytes / (1024**3), 2)} GB). Triggering FIFO quota purge."
         )
         target_ceiling = int(max_storage_bytes * target_reduction_ratio)
