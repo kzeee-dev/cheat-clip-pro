@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - update/live-render-terminal
+      - rebuild/smart-core-audit
 
 jobs:
   build:
