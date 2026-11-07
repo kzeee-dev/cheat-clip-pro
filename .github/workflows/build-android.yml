@@ -7,6 +7,12 @@ on:
       - update/live-render-terminal
       - rebuild/smart-core-audit
 
+# Keep only the newest build per branch; older APK builds become obsolete
+# after each incremental source commit.
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
