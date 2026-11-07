@@ -1232,6 +1232,11 @@ def download_full_raw_video(
                 "-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best",
                 "-o", str(output_path),
                 "--merge-output-format", "mp4",
+                "--socket-timeout", "20",
+                "--retries", "5",
+                "--fragment-retries", "5",
+                "--file-access-retries", "3",
+                "-N", "4",
                 "--newline",
                 "--progress-template", "download:%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
                 clean_url
@@ -1265,14 +1270,20 @@ def download_full_raw_video(
             )
             reader.start()
 
-            total_timeout = max(
-                300,
-                int(os.environ.get("CHEAT_CLIP_RAW_DOWNLOAD_TIMEOUT", "21600")),
-            )
-            idle_timeout = max(
-                60,
-                int(os.environ.get("CHEAT_CLIP_DOWNLOAD_IDLE_TIMEOUT", "300")),
-            )
+            try:
+                total_timeout = max(
+                    300,
+                    int(os.environ.get("CHEAT_CLIP_RAW_DOWNLOAD_TIMEOUT", "21600")),
+                )
+            except (TypeError, ValueError):
+                total_timeout = 21600
+            try:
+                idle_timeout = max(
+                    60,
+                    int(os.environ.get("CHEAT_CLIP_DOWNLOAD_IDLE_TIMEOUT", "300")),
+                )
+            except (TypeError, ValueError):
+                idle_timeout = 300
             started_at = time.monotonic()
             last_output_at = started_at
             reader_finished = False
