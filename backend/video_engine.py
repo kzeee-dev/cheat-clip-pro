@@ -959,13 +959,23 @@ def download_clip_segment(
     # Ensures clips > 1 minute (e.g. 70s, 90s, 120s, 180s) have ample time to download and merge without timing out.
     timeout_sec = max(300, min(1200, int(clip_duration * 5) + 90))
 
+    # Bound the entire fallback chain, not just each individual subprocess.
+    # A short clip must not spend 10-30 minutes cycling through identical network failures.
+    overall_timeout = max(720, min(1800, int(clip_duration * 8) + 600))
+    overall_deadline = time.monotonic() + overall_timeout
+
     with ephemeral_cookies_file(cookies_content) as temp_cookies:
         has_cookies = temp_cookies is not None or get_effective_cookies_path() is not None
-        # If cookies are present, try with cookies first; if rejected by YouTube (or any reload/bot error), try guest mode.
+        # Guest mode is useful for auth/session rejection, not for a stalled network.
         attempts = [True, False] if has_cookies else [False]
         last_err_snippet = "unknown"
 
         for use_cookies in attempts:
+            remaining = int(overall_deadline - time.monotonic())
+            if remaining <= 0:
+                last_err_snippet = f"overall download budget exhausted after {overall_timeout}s"
+                break
+
             mode_label = "with cookies" if use_cookies else "guest mode (without cookies)"
             base_cmd = get_yt_dlp_base_cmd(include_cookies=use_cookies, cookies_path=temp_cookies if use_cookies else None)
             logger.info(f"Downloading HD section ({clip_duration:.1f}s) {t_start_fmt} -> {t_end_fmt} for {clean_url} ({mode_label}, timeout: {timeout_sec}s)")
@@ -987,7 +997,7 @@ def download_clip_segment(
                 clean_url
             ]
             try:
-                res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_sec)
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=min(timeout_sec, max(1, int(overall_deadline - time.monotonic()))))
                 if res.returncode == 0 and is_valid_mp4(output_path):
                     logger.info(f"Successfully downloaded section ({mode_label}): {output_path} ({output_path.stat().st_size} bytes)")
                     return str(output_path)
@@ -1030,7 +1040,7 @@ def download_clip_segment(
                     "-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best",
                     clean_url
                 ]
-                url_res = subprocess.run(url_cmd, capture_output=True, text=True, timeout=30)
+                url_res = subprocess.run(url_cmd, capture_output=True, text=True, timeout=min(30, max(1, int(overall_deadline - time.monotonic()))))
                 if url_res.returncode == 0 and url_res.stdout.strip():
                     urls = url_res.stdout.strip().split("\n")
                     video_stream = urls[0]
@@ -1056,7 +1066,7 @@ def download_clip_segment(
                         "-movflags", "+faststart",
                         str(output_path)
                     ]
-                    trim_res = subprocess.run(trim_cmd, capture_output=True, text=True, timeout=trim_timeout)
+                    trim_res = subprocess.run(trim_cmd, capture_output=True, text=True, timeout=min(trim_timeout, max(1, int(overall_deadline - time.monotonic()))))
                     if trim_res.returncode == 0 and is_valid_mp4(output_path):
                         logger.info(f"Successfully trimmed stream URLs with FFmpeg ({mode_label}): {output_path} ({output_path.stat().st_size} bytes)")
                         return str(output_path)
@@ -1099,7 +1109,7 @@ def download_clip_segment(
                     clean_url
                 ]
                 timeout_720p = max(200, min(600, int(clip_duration * 4) + 60))
-                res_720p = subprocess.run(cmd_720p, capture_output=True, text=True, timeout=timeout_720p)
+                res_720p = subprocess.run(cmd_720p, capture_output=True, text=True, timeout=min(timeout_720p, max(1, int(overall_deadline - time.monotonic()))))
                 if res_720p.returncode == 0 and is_valid_mp4(output_path):
                     logger.info(f"Successfully downloaded 720p fallback section ({mode_label}): {output_path} ({output_path.stat().st_size} bytes)")
                     return str(output_path)
@@ -1142,7 +1152,7 @@ def download_clip_segment(
                     clean_url
                 ]
                 timeout_480p = max(150, min(450, int(clip_duration * 3) + 45))
-                res_480p = subprocess.run(cmd_480p, capture_output=True, text=True, timeout=timeout_480p)
+                res_480p = subprocess.run(cmd_480p, capture_output=True, text=True, timeout=min(timeout_480p, max(1, int(overall_deadline - time.monotonic()))))
                 if res_480p.returncode == 0 and is_valid_mp4(output_path):
                     logger.info(f"Successfully downloaded 480p fallback section ({mode_label}): {output_path} ({output_path.stat().st_size} bytes)")
                     return str(output_path)
@@ -1162,9 +1172,24 @@ def download_clip_segment(
                         pass
                 last_err_snippet = str(e)
 
-            # If cookies were used and failed due to reload / session error or bot block, log and proceed to guest mode
+            # Only retry without cookies when the failure looks like an auth/session rejection.
+            # Network timeouts are shared across all methods and should not be repeated in guest mode.
             if use_cookies:
-                logger.warning(f"Download with cookies failed ({last_err_snippet}). Automatically attempting guest mode fallback...")
+                auth_error_terms = (
+                    "reloaded", "reload", "confirm you're not a bot",
+                    "sign in", "login", "authentication", "cookie",
+                    "403", "429"
+                )
+                if not any(term in last_err_snippet.lower() for term in auth_error_terms):
+                    logger.info(
+                        "Skipping guest-mode retry because the cookie attempt failed "
+                        "for a non-auth reason; avoiding duplicate network retries."
+                    )
+                    break
+                logger.warning(
+                    f"Download with cookies failed due to a likely auth/session issue "
+                    f"({last_err_snippet}). Attempting guest mode once..."
+                )
 
     # Ensure any corrupt partial file is unlinked
     if output_path.exists():
