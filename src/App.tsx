@@ -778,7 +778,24 @@ export default function App() {
     if (!batchProgress?.batch_id) return;
     const batchId = batchProgress.batch_id;
     try {
-      // Optimistically update the UI to show 'pending' / retrying state for selected clip(s)
+      const userCookies = getStoredCookies();
+      const resp = await fetch(apiUrl(`/api/render-batch/${batchId}/retry`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clip_indices: clipIndex !== undefined ? [clipIndex] : undefined,
+          cookies: userCookies || undefined,
+        }),
+      });
+
+      if (!resp.ok) {
+        const errJson = await resp.json().catch(() => ({}));
+        throw new Error(errJson.detail || 'Failed to retry rendering');
+      }
+
+      // Update the UI only after the backend accepted the retry.
+      // A rejected request (e.g. HTTP 409 while the batch is already running)
+      // must leave the existing progress state untouched.
       setBatchProgress(prev => {
         if (!prev) return prev;
         return {
@@ -794,21 +811,6 @@ export default function App() {
           })
         };
       });
-
-      const userCookies = getStoredCookies();
-      const resp = await fetch(apiUrl(`/api/render-batch/${batchId}/retry`), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clip_indices: clipIndex !== undefined ? [clipIndex] : undefined,
-          cookies: userCookies || undefined,
-        }),
-      });
-
-      if (!resp.ok) {
-        const errJson = await resp.json().catch(() => ({}));
-        throw new Error(errJson.detail || 'Failed to retry rendering');
-      }
 
       // Reconnect SSE to track retry progress
       listenToBatchProgress(batchId);
