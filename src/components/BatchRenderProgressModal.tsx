@@ -97,8 +97,8 @@ export const BatchRenderProgressModal: React.FC<BatchRenderProgressModalProps> =
                           // ignoring the download attribute on cross-origin MP4 links.
                           event.preventDefault();
                           try {
-                            const downloadPath = clip.download_url;
-                            if (!downloadPath) throw new Error('URL download MP4 tidak tersedia.');
+                            const downloadPath: string = clip.download_url ?? '';
+                            if (downloadPath.length === 0) throw new Error('URL download MP4 tidak tersedia.');
                             const response = await fetch(apiUrl(downloadPath));
                             if (!response.ok) {
                               const detail = await response.text().catch(() => '');
