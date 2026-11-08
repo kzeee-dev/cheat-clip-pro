@@ -527,7 +527,7 @@ export default function App() {
                       ...prev,
                       clips: prev.clips.map((c, idx) => idx === i ? {
                         ...c,
-                        status: statusData.status === 'ready' ? 'downloading' : 'downloading',
+                        status: 'downloading',
                         download_percent: Number(statusData.download_percent ?? statusData.progress_percent ?? 0),
                         downloaded: statusData.downloaded || '',
                         download_total: statusData.total || '',
