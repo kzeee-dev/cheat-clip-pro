@@ -355,6 +355,8 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
 
   const [networkPing, setNetworkPing] = useState<number | null>(null);
   const [networkPingState, setNetworkPingState] = useState<'checking' | 'good' | 'fair' | 'poor' | 'offline'>('checking');
+  const [internetPing, setInternetPing] = useState<number | null>(null);
+  const [internetState, setInternetState] = useState<'checking' | 'online' | 'degraded' | 'offline'>('checking');
 
   useEffect(() => {
     let active = true;
@@ -387,13 +389,30 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
         // because a proxy or older backend returns an empty/non-JSON body.
         if (!response.ok) throw new Error(`Backend health check returned HTTP ${response.status}`);
         const latency = Math.max(0, Math.round(performance.now() - startedAt));
+        const pingData = await response.json().catch(() => null);
         if (!active) return;
         setNetworkPing(latency);
         setNetworkPingState(latency < 100 ? 'good' : latency < 250 ? 'fair' : 'poor');
+        if (pingData && typeof pingData.internet_status === 'string') {
+          setInternetState(
+            pingData.internet_status === 'online' || pingData.internet_status === 'degraded'
+              ? pingData.internet_status
+              : 'offline'
+          );
+          setInternetPing(
+            typeof pingData.internet_latency_ms === 'number' ? pingData.internet_latency_ms : null
+          );
+        } else {
+          // Older backend: server is reachable, but internet quality is not measured.
+          setInternetState('checking');
+          setInternetPing(null);
+        }
       } catch {
         if (!active) return;
         setNetworkPing(null);
         setNetworkPingState('offline');
+        setInternetPing(null);
+        setInternetState('offline');
       } finally {
         window.clearTimeout(timeoutId);
         checking = false;
@@ -2196,6 +2215,34 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
               </span>
               <span style={{ opacity: 0.85 }}>
                 {networkPing !== null ? `${networkPing} ms` : '— ms'}
+              </span>
+            </div>
+            <div
+              role="status"
+              aria-live="polite"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                marginTop: '0.55rem',
+                padding: '0.35rem 0.6rem',
+                border: `1px solid ${internetState === 'online' ? 'rgba(34,197,94,0.45)' : internetState === 'degraded' ? 'rgba(234,179,8,0.45)' : internetState === 'offline' ? 'rgba(239,68,68,0.45)' : 'rgba(148,163,184,0.35)'}`,
+                background: 'rgba(15,23,42,0.45)',
+                color: internetState === 'online' ? '#4ade80' : internetState === 'degraded' ? '#facc15' : internetState === 'offline' ? '#f87171' : '#cbd5e1',
+                fontSize: '0.7rem',
+                fontFamily: 'var(--font-mono)',
+                width: 'fit-content',
+              }}
+            >
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'currentColor', boxShadow: '0 0 7px currentColor' }} />
+              <strong>INTERNET</strong>
+              <span>
+                {internetState === 'checking' ? 'Belum terukur' :
+                  internetState === 'online' ? 'Stabil' :
+                  internetState === 'degraded' ? 'Sebagian host gagal' : 'Tidak terjangkau'}
+              </span>
+              <span style={{ opacity: 0.85 }}>
+                {internetPing !== null ? `${internetPing} ms` : '— ms'}
               </span>
             </div>
           </div>
