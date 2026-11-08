@@ -5815,6 +5815,27 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                     </div>
                   </div>
 
+                  {clip.status === 'downloading' && (
+                    <div style={{ width: '100%', marginTop: '0.35rem', padding: '0.55rem 0.65rem', borderRadius: '7px', background: 'rgba(245, 158, 11, 0.07)', border: '1px solid rgba(245, 158, 11, 0.18)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', fontSize: '0.68rem', color: '#fbbf24', marginBottom: '0.35rem' }}>
+                        <span>Downloading source media</span>
+                        <strong>{Math.round(Math.max(0, Math.min(100, clip.download_percent ?? 0)))}%</strong>
+                      </div>
+                      <div style={{ height: '5px', width: '100%', borderRadius: '5px', background: 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${Math.max(0, Math.min(100, clip.download_percent ?? 0))}%`, borderRadius: '5px', background: 'linear-gradient(90deg, #f59e0b, #f97316)', transition: 'width 0.25s ease' }} />
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: '0.35rem 0.75rem', marginTop: '0.4rem', fontSize: '0.67rem', color: 'var(--text-secondary, #cbd5e1)' }}>
+                        <span>Size: {clip.downloaded || 'Preparing'} / {clip.download_total || 'unknown'}</span>
+                        <span>Speed: {clip.download_speed || '—'}</span>
+                      </div>
+                      {clip.download_eta && (
+                        <div style={{ marginTop: '0.25rem', fontSize: '0.65rem', color: 'var(--text-muted, #94a3b8)' }}>
+                          ETA: {clip.download_eta}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {clip.status === 'completed' && clip.download_url && (
                     <video
                       controls
