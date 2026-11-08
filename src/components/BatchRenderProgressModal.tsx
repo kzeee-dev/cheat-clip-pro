@@ -74,7 +74,7 @@ export const BatchRenderProgressModal: React.FC<BatchRenderProgressModalProps> =
                 {clip.status === 'pending' && <span className={`${styles.statusBadge} ${styles.badgePending}`}>{t.batchProgress.statusWaiting}</span>}
                 {clip.status === 'downloading' && (
                   <div className={styles.downloadProgressWrap}>
-                    <span className={`${styles.statusBadge} ${styles.badgeActive}`}>{t.batchProgress.statusSlicing}</span>
+                    <span className={`${styles.statusBadge} ${styles.badgeActive}`}>{clip.download_phase === 'stream_trim' ? 'Memotong stream' : t.batchProgress.statusSlicing}</span>
                     <div className={styles.downloadProgressTrack}>
                       <div className={styles.downloadProgressFill} style={{ width: `${Math.max(0, Math.min(100, clip.download_percent ?? 0))}%` }} />
                     </div>
