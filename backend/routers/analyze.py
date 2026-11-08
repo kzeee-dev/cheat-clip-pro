@@ -69,6 +69,14 @@ from backend.utils.text import (
 )
 
 
+def _bounded_score(value) -> int:
+    """Normalize untrusted model score output to an integer in 0..100."""
+    try:
+        return max(0, min(100, int(float(value or 0))))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _calibrate_viral_score(clip: dict) -> int:
     """Use a transparent weighted score when component ratings are available."""
     weights = {
@@ -1950,11 +1958,11 @@ async def analyze_video(request: AnalyzeRequest):
                 end_time=end,
                 hook_time=hook,
                 virality_score=_calibrate_viral_score(raw_clip),
-                hook_strength=raw_clip.get('hook_strength', 0),
-                emotional_impact=raw_clip.get('emotional_impact', 0),
-                standalone_value=raw_clip.get('standalone_value', 0),
-                clarity=raw_clip.get('clarity', 0),
-                shareability=raw_clip.get('shareability', 0),
+                hook_strength=_bounded_score(raw_clip.get('hook_strength', 0)),
+                emotional_impact=_bounded_score(raw_clip.get('emotional_impact', 0)),
+                standalone_value=_bounded_score(raw_clip.get('standalone_value', 0)),
+                clarity=_bounded_score(raw_clip.get('clarity', 0)),
+                shareability=_bounded_score(raw_clip.get('shareability', 0)),
                 score_reason=raw_clip.get('score_reason', ''),
                 key_quotes=raw_clip.get('key_quotes') or [],
                 transcript=" ".join(clip_lines),
