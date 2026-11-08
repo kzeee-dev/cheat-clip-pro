@@ -446,6 +446,106 @@ def update_batch_summary_and_zip(batch_id: str, settings: RenderSettingsModel):
         batch["warning_message"] = None
 
 
+def _get_concat_stream_signature(file_path: str) -> Optional[Tuple[Tuple[str, ...], ...]]:
+    """Return codec parameters required for safe concat-demuxer stream copy."""
+    probe_cmd = [
+        "ffprobe", "-v", "error", "-show_streams",
+        "-show_entries",
+        "stream=codec_type,codec_name,profile,codec_tag_string,width,height,pix_fmt,level,sample_rate,channels,channel_layout,time_base,avg_frame_rate,r_frame_rate,field_order",
+        "-of", "json", file_path,
+    ]
+    try:
+        result = subprocess.run(
+            probe_cmd, capture_output=True, text=True, timeout=20, check=False
+        )
+        if result.returncode != 0:
+            return None
+        streams = json.loads(result.stdout or "{}").get("streams", [])
+        if not streams:
+            return None
+        signature = []
+        for stream in streams:
+            if stream.get("codec_type") not in ("video", "audio"):
+                continue
+            signature.append(tuple(
+                str(stream.get(key) or "")
+                for key in (
+                    "codec_type", "codec_name", "profile", "codec_tag_string",
+                    "width", "height", "pix_fmt", "level", "sample_rate",
+                    "channels", "channel_layout", "time_base",
+                    "avg_frame_rate", "r_frame_rate", "field_order",
+                )
+            ))
+        return tuple(signature) if signature else None
+    except (OSError, subprocess.SubprocessError, ValueError, TypeError):
+        return None
+
+
+def _try_concat_segments_stream_copy(
+    part_paths: List[str], output_path: str, timeout: int
+) -> bool:
+    """Fast-path compatible MP4 segments with the concat demuxer (no re-encode)."""
+    if len(part_paths) < 2:
+        return False
+
+    signatures = [_get_concat_stream_signature(path) for path in part_paths]
+    if not signatures[0] or any(sig != signatures[0] for sig in signatures[1:]):
+        return False
+
+    list_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", suffix=".ffconcat",
+            prefix="concat_", dir=str(TEMP_DIR), delete=False
+        ) as list_file:
+            list_path = list_file.name
+            list_file.write("ffconcat version 1.0\\n")
+            for part_path in part_paths:
+                escaped_path = os.path.abspath(part_path).replace("\\\\", "\\\\\\\\").replace("'", "\\\\'")
+                list_file.write(f"file '{escaped_path}'\\n")
+
+        command = [
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-f", "concat", "-safe", "0", "-i", list_path,
+            "-map", "0:v:0", "-map", "0:a:0?",
+            "-c", "copy", "-movflags", "+faststart",
+            output_path,
+        ]
+        result = subprocess.run(
+            command, capture_output=True, text=True,
+            timeout=timeout, check=False,
+        )
+        if result.returncode != 0 or not is_valid_mp4(output_path):
+            if os.path.exists(output_path):
+                os.unlink(output_path)
+            logger.warning(
+                "Fast merged concat (stream copy) was unavailable; "
+                "falling back to normalized FFmpeg encoding: %s",
+                (result.stderr or result.stdout or "invalid output")[-1200:],
+            )
+            return False
+
+        logger.info(
+            "Merged %d compatible segments using stream copy (no video re-encode).",
+            len(part_paths),
+        )
+        return True
+    except (OSError, subprocess.SubprocessError) as exc:
+        if os.path.exists(output_path):
+            try:
+                os.unlink(output_path)
+            except OSError:
+                pass
+        logger.warning("Fast merged concat failed; using safe re-encode fallback: %s", exc)
+        return False
+    finally:
+        if list_path and os.path.exists(list_path):
+            try:
+                os.unlink(list_path)
+            except OSError:
+                pass
+
+
 async def render_merged_batch_clips(
     batch_id: str,
     clips: List[Dict[str, Any]],
@@ -524,60 +624,83 @@ async def render_merged_batch_clips(
                     _ensure_concat_streams, segment_path
                 )
 
-            inputs = []
-            filter_parts = []
-            for idx_p, p in enumerate(part_paths):
-                inputs.extend(["-i", p])
-                filter_parts.append(
-                    f"[{idx_p}:v]"
-                    f"scale=1280:720:force_original_aspect_ratio=decrease,"
-                    f"pad=1280:720:(ow-iw)/2:(oh-ih)/2,"
-                    f"setsar=1,fps=30,format=yuv420p"
-                    f"[v{idx_p}];"
-                    f"[{idx_p}:a]aresample=48000:async=1:first_pts=0,"
-                    f"aformat=sample_fmts=fltp:channel_layouts=stereo[a{idx_p}];"
-                )
-
-            concat_inputs = "".join(
-                f"[v{idx_p}][a{idx_p}]"
-                for idx_p in range(len(part_paths))
-            )
-            filter_str = (
-                f"{''.join(filter_parts)}"
-                f"{concat_inputs}concat=n={len(part_paths)}:v=1:a=1[v][a]"
-            )
-            concat_cmd = [
-                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                *inputs,
-                "-filter_complex", filter_str,
-                "-map", "[v]", "-map", "[a]",
-                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18",
-                "-c:a", "aac", "-b:a", "192k",
-                "-avoid_negative_ts", "make_zero",
-                "-movflags", "+faststart",
-                raw_merged_path
-            ]
             concat_timeout = max(180, total_segments * 60)
             logger.info(f"Concatenating {len(part_paths)} segments into {raw_merged_path}")
-            concat_result = await asyncio.to_thread(
-                subprocess.run,
-                concat_cmd,
-                capture_output=True,
-                text=True,
-                timeout=concat_timeout,
-                check=False,
+
+            # Prefer packet-level stream copy when every segment has identical
+            # codec parameters. This avoids an expensive intermediate encode.
+            copied = await asyncio.to_thread(
+                _try_concat_segments_stream_copy,
+                part_paths,
+                raw_merged_path,
+                concat_timeout,
             )
-            if concat_result.returncode != 0:
-                ffmpeg_error = (
-                    concat_result.stderr
-                    or concat_result.stdout
-                    or "Tidak ada detail error dari FFmpeg"
-                ).strip()
-                raise RuntimeError(
-                    f"FFmpeg concat gagal (exit {concat_result.returncode}): "
-                    f"{ffmpeg_error[-4000:]}"
+
+            if copied:
+                add_render_log(
+                    batch_id,
+                    "Merged: segmen kompatibel, digabung tanpa encode ulang",
+                    level="success",
+                    clip_index=0,
                 )
-            add_render_log(batch_id, "Merged: seluruh segmen berhasil digabung", level="success", clip_index=0)
+            else:
+                inputs = []
+                filter_parts = []
+                for idx_p, p in enumerate(part_paths):
+                    inputs.extend(["-i", p])
+                    filter_parts.append(
+                        f"[{idx_p}:v]"
+                        f"scale=1280:720:force_original_aspect_ratio=decrease,"
+                        f"pad=1280:720:(ow-iw)/2:(oh-ih)/2,"
+                        f"setsar=1,fps=30,format=yuv420p"
+                        f"[v{idx_p}];"
+                        f"[{idx_p}:a]aresample=48000:async=1:first_pts=0,"
+                        f"aformat=sample_fmts=fltp:channel_layouts=stereo[a{idx_p}];"
+                    )
+
+                concat_inputs = "".join(
+                    f"[v{idx_p}][a{idx_p}]"
+                    for idx_p in range(len(part_paths))
+                )
+                filter_str = (
+                    f"{''.join(filter_parts)}"
+                    f"{concat_inputs}concat=n={len(part_paths)}:v=1:a=1[v][a]"
+                )
+                concat_cmd = [
+                    "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                    *inputs,
+                    "-filter_complex", filter_str,
+                    "-map", "[v]", "-map", "[a]",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18",
+                    "-c:a", "aac", "-b:a", "192k",
+                    "-avoid_negative_ts", "make_zero",
+                    "-movflags", "+faststart",
+                    raw_merged_path
+                ]
+                concat_result = await asyncio.to_thread(
+                    subprocess.run,
+                    concat_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=concat_timeout,
+                    check=False,
+                )
+                if concat_result.returncode != 0 or not is_valid_mp4(raw_merged_path):
+                    ffmpeg_error = (
+                        concat_result.stderr
+                        or concat_result.stdout
+                        or "Tidak ada detail error dari FFmpeg"
+                    ).strip()
+                    raise RuntimeError(
+                        f"FFmpeg concat gagal (exit {concat_result.returncode}): "
+                        f"{ffmpeg_error[-4000:]}"
+                    )
+                add_render_log(
+                    batch_id,
+                    "Merged: seluruh segmen berhasil dinormalisasi dan digabung",
+                    level="success",
+                    clip_index=0,
+                )
 
         add_render_log(batch_id, "Merged: mulai transkripsi dan pembuatan subtitle", clip_index=0)
         # 3. Transcribe & generate time-shifted subtitles
