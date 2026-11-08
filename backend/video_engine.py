@@ -341,6 +341,9 @@ def check_encoder_support(encoder_name: str) -> bool:
 
 
 ENCODER_CONFIGS: Dict[str, Tuple[str, List[str]]] = {
+    # Android MediaCodec can use the phone's dedicated video encoder instead of
+    # consuming CPU cores. It is selected only after a real FFmpeg probe passes.
+    "mediacodec": ("h264_mediacodec", ["-c:v", "h264_mediacodec", "-b:v", "6M"]),
     "nvenc": ("h264_nvenc", ["-c:v", "h264_nvenc", "-preset", "p4", "-cq", "23"]),
     "amf": ("h264_amf", ["-c:v", "h264_amf", "-quality", "speed", "-rc", "cbr", "-b:v", "6M"]),
     "qsv": ("h264_qsv", ["-c:v", "h264_qsv", "-preset", "veryfast", "-global_quality", "23", "-look_ahead", "0"]),
@@ -393,11 +396,20 @@ def detect_hardware_support() -> Dict[str, Any]:
     if _DETECTED_SUPPORT is not None:
         return _DETECTED_SUPPORT
 
+    # MediaCodec is Android-only and must pass an actual encode probe before use.
+    is_android = sys.platform.startswith("linux") and bool(
+        os.environ.get("ANDROID_ROOT") or os.environ.get("ANDROID_DATA")
+    )
+    has_mediacodec = (
+        check_encoder_support("h264_mediacodec") if is_android else False
+    )
     has_nvenc = check_encoder_support("h264_nvenc")
     has_amf = check_encoder_support("h264_amf")
     has_qsv = check_encoder_support("h264_qsv")
 
-    if has_nvenc:
+    if has_mediacodec:
+        recommended = "mediacodec"
+    elif has_nvenc:
         recommended = "nvenc"
     elif has_amf:
         recommended = "amf"
@@ -409,6 +421,7 @@ def detect_hardware_support() -> Dict[str, Any]:
     gpu_name = get_system_gpu_name()
 
     _DETECTED_SUPPORT = {
+        "mediacodec": has_mediacodec,
         "nvenc": has_nvenc,
         "amf": has_amf,
         "qsv": has_qsv,
@@ -421,11 +434,8 @@ def detect_hardware_support() -> Dict[str, Any]:
 
 def get_preferred_video_encoder() -> Tuple[str, List[str]]:
     """
-    Auto-detects the fastest available hardware encoder:
-    1. NVIDIA NVENC (h264_nvenc)
-    2. AMD AMF (h264_amf)
-    3. Intel QuickSync (h264_qsv)
-    4. Universal CPU software encoding (libx264)
+    Auto-detects a working hardware encoder, preferring Android MediaCodec
+    on supported phones, then NVIDIA/AMD/Intel hardware, then CPU fallback.
     """
     support = detect_hardware_support()
     rec = support.get("recommended", "cpu")
