@@ -8,13 +8,15 @@ import uuid
 import zipfile
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
+from urllib.parse import quote
 
 from backend.config import (
     ACTIVE_ENCODER_NAME,
     EXPORTS_DIR,
     detect_hardware_support,
+    is_valid_mp4,
     logger,
 )
 from backend.schemas.render import (
@@ -187,6 +189,61 @@ async def get_render_progress(batch_id: str):
             "X-Accel-Buffering": "no",
         }
     )
+
+
+@router.post("/api/save-rendered-clip")
+async def save_client_rendered_clip(
+    file: UploadFile = File(...),
+    title: str = Form("clip"),
+):
+    """Persist a browser-rendered MP4 so Android can download it over HTTP(S)."""
+    if not file.filename or not file.filename.lower().endswith(".mp4"):
+        raise HTTPException(status_code=400, detail="Only MP4 rendered clips can be saved")
+
+    clean_title = re.sub(r'[\\/*?:"<>|]', "", (title or "clip").strip()) or "clip"
+    clean_title = clean_title[:100]
+    unique_name = f"client_{uuid.uuid4().hex[:12]}_{clean_title}.mp4"
+    final_path = EXPORTS_DIR / unique_name
+    temp_path = EXPORTS_DIR / f".{unique_name}.part"
+    max_upload_bytes = 2 * 1024 * 1024 * 1024
+    total_bytes = 0
+
+    EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(temp_path, "wb") as output:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total_bytes += len(chunk)
+                if total_bytes > max_upload_bytes:
+                    raise HTTPException(status_code=413, detail="Rendered MP4 exceeds the 2 GB upload limit")
+                output.write(chunk)
+
+        if total_bytes < 1024:
+            raise HTTPException(status_code=400, detail="Rendered MP4 is empty or incomplete")
+
+        temp_path.replace(final_path)
+        if not is_valid_mp4(final_path):
+            final_path.unlink(missing_ok=True)
+            raise HTTPException(status_code=400, detail="Uploaded file is not a valid MP4")
+
+        return {
+            "success": True,
+            "filename": f"{clean_title}.mp4",
+            "size_bytes": total_bytes,
+            "download_url": f"/api/download-rendered/{unique_name}?title={quote(clean_title)}",
+        }
+    except HTTPException:
+        temp_path.unlink(missing_ok=True)
+        raise
+    except Exception as error:
+        temp_path.unlink(missing_ok=True)
+        final_path.unlink(missing_ok=True)
+        logger.error(f"Failed to persist client-rendered MP4: {error}")
+        raise HTTPException(status_code=500, detail="Failed to save rendered MP4")
+    finally:
+        await file.close()
 
 
 @router.get("/api/download-rendered/{file_name}")
