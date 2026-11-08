@@ -83,6 +83,12 @@ def _format_parsed_dict(data: dict, channel: str, lang_code: str) -> dict:
             "end_time": float(c.get('end_time', 0.0) or 0.0),
             "hook_time": float(c.get('hook_time')) if c.get('hook_time') is not None else None,
             "virality_score": int(c.get('virality_score', 0) or 0),
+            "hook_strength": int(c.get('hook_strength', 0) or 0),
+            "emotional_impact": int(c.get('emotional_impact', 0) or 0),
+            "standalone_value": int(c.get('standalone_value', 0) or 0),
+            "clarity": int(c.get('clarity', 0) or 0),
+            "shareability": int(c.get('shareability', 0) or 0),
+            "score_reason": str(c.get('score_reason', '') or ''),
             "key_quotes": c.get('key_quotes') if isinstance(c.get('key_quotes'), list) else [],
             "title_suggestion": title_sug,
             "caption_suggestion": str(c.get('caption_suggestion', '') or ''),
@@ -1391,6 +1397,16 @@ async def analyze_video(request: AnalyzeRequest):
             f"4. Keep titles snappy, viral, engaging, and under 8 words.\n\n"
             f"Transcript (start|end[|interest] text):\n---\n{transcript_text}\n---\n\n"
             f"Rules: use exact seconds from transcript; clips must start/end at sentence boundaries; do not overlap.\n"
+            f"VIRAL INTELLIGENCE SCORING (MANDATORY, EVIDENCE-BASED):\n"
+            f"Score each candidate across five dimensions from 0 to 100:\n"
+            f"- hook_strength: immediate curiosity, surprising claim, strong question, conflict, or compelling opening. Judge the actual first seconds, not a hypothetical rewritten hook.\n"
+            f"- emotional_impact: observable humor, surprise, tension, empathy, inspiration, or other emotional response in the transcript.\n"
+            f"- standalone_value: whether the clip has enough setup, context, and payoff to make sense without the full video. Penalize missing context and cut-off thoughts.\n"
+            f"- clarity: how clearly and specifically the main idea is communicated.\n"
+            f"- shareability: whether a viewer has a concrete reason to share, discuss, save, or react to this moment.\n"
+            f"Calculate virality_score using this weighted formula: hook_strength 25%, emotional_impact 20%, standalone_value 25%, clarity 15%, shareability 15%. Round to the nearest integer. Do not inflate scores: a score above 90 requires exceptional evidence across most dimensions; ordinary useful moments should score lower.\n"
+            f"Provide score_reason in {lang_name}, one concise sentence grounded in the transcript. Do not claim actual views, retention, or future virality. Audio-energy heatmap is only a weak engagement proxy, not actual viewer retention.\n"
+            f"Prefer a few genuinely strong candidates over padding the list with weak moments. Ensure hook_time points to the real hook inside the selected clip.\n\n"
             f"Return clips sorted by virality_score desc."
         )
 
@@ -1655,6 +1671,12 @@ async def analyze_video(request: AnalyzeRequest):
                                             "end_time": getattr(c, 'end_time', 0.0),
                                             "hook_time": getattr(c, 'hook_time', None),
                                             "virality_score": getattr(c, 'virality_score', 0),
+                                            "hook_strength": getattr(c, 'hook_strength', 0),
+                                            "emotional_impact": getattr(c, 'emotional_impact', 0),
+                                            "standalone_value": getattr(c, 'standalone_value', 0),
+                                            "clarity": getattr(c, 'clarity', 0),
+                                            "shareability": getattr(c, 'shareability', 0),
+                                            "score_reason": getattr(c, 'score_reason', ''),
                                             "key_quotes": getattr(c, 'key_quotes', []),
                                             "title_suggestion": sanitize_first_person_title(getattr(c, 'title_suggestion', ''), channel, lang=lang_code),
                                             "caption_suggestion": getattr(c, 'caption_suggestion', ''),
@@ -1904,6 +1926,12 @@ async def analyze_video(request: AnalyzeRequest):
                 end_time=end,
                 hook_time=hook,
                 virality_score=raw_clip.get('virality_score', 0),
+                hook_strength=raw_clip.get('hook_strength', 0),
+                emotional_impact=raw_clip.get('emotional_impact', 0),
+                standalone_value=raw_clip.get('standalone_value', 0),
+                clarity=raw_clip.get('clarity', 0),
+                shareability=raw_clip.get('shareability', 0),
+                score_reason=raw_clip.get('score_reason', ''),
                 key_quotes=raw_clip.get('key_quotes') or [],
                 transcript=" ".join(clip_lines),
                 title_suggestion=sanitize_first_person_title(raw_clip.get('title_suggestion', ''), channel, lang=lang_code),
