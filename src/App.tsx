@@ -69,7 +69,7 @@ function GlobalNetworkMonitor() {
       if (checking) return;
       checking = true;
       const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 8000);
+      const timeoutId = window.setTimeout(() => controller.abort(), 15000);
       const startedAt = performance.now();
       try {
         const response = await fetch(apiUrl('/api/system/ping'), {
@@ -142,6 +142,7 @@ function GlobalNetworkMonitor() {
         <span>{internetState === 'checking' ? 'Belum terukur' : internetState === 'online' ? 'Stabil' : internetState === 'degraded' ? 'Terbatas' : 'Offline'}</span>
         <span>{internetPing === null ? '—' : `${internetPing} ms`}</span>
       </div>
+      <div style={{ width: '100%', textAlign: 'right', color: '#cbd5e1', fontSize: '0.55rem', fontFamily: 'var(--font-mono)' }}>API: {apiUrl('/api/system/ping')} · {window.location.origin}</div>
       {monitorError && <div title={monitorError} style={{ width: '100%', textAlign: 'right', color: '#fca5a5', fontSize: '0.6rem', fontFamily: 'var(--font-mono)' }}>DEBUG: {monitorError.slice(0, 110)}</div>}
     </div>
   );
