@@ -4417,7 +4417,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                         {Math.floor(clip.end_time / 60)}:{(clip.end_time % 60).toFixed(0).padStart(2, '0')} (
                         {(clip.end_time - clip.start_time).toFixed(0)}s) · Score: {clip.virality_score}%
                       </span>
-                      {(clip.score_reason || clip.hook_strength !== undefined) && (
+                      {(clip.score_reason || [clip.hook_strength, clip.emotional_impact, clip.standalone_value, clip.clarity, clip.shareability].some(value => typeof value === 'number' && value > 0)) && (
                         <details style={{ marginTop: '0.35rem', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
                           <summary style={{ cursor: 'pointer', color: 'var(--accent-primary)', fontWeight: 600 }}>
                             AI Viral Intelligence · Rincian skor
