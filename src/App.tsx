@@ -521,6 +521,21 @@ export default function App() {
                     return;
                   }
                   const statusData = await statusRes.json();
+                  setBatchProgress(prev => {
+                    if (!prev) return prev;
+                    return {
+                      ...prev,
+                      clips: prev.clips.map((c, idx) => idx === i ? {
+                        ...c,
+                        status: statusData.status === 'ready' ? 'downloading' : 'downloading',
+                        download_percent: Number(statusData.download_percent ?? statusData.progress_percent ?? 0),
+                        downloaded: statusData.downloaded || '',
+                        download_total: statusData.total || '',
+                        download_speed: statusData.speed || '',
+                        download_eta: statusData.eta || '',
+                      } : c)
+                    };
+                  });
                   if (statusData.status === 'ready' && statusData.download_url) {
                     clearInterval(pollInterval);
                     resolve(statusData.download_url);
