@@ -3,7 +3,6 @@ import { RefreshCw, AlertTriangle } from 'lucide-react';
 import { useLanguage } from '../locales';
 import type { BatchRenderProgress } from '../types';
 import { apiUrl } from '../utils/api';
-import { triggerBrowserDownload } from '../utils/download';
 import styles from './BatchRenderProgressModal.module.css';
 
 interface BatchRenderProgressModalProps {
@@ -87,33 +86,9 @@ export const BatchRenderProgressModal: React.FC<BatchRenderProgressModalProps> =
                     <span className={`${styles.statusBadge} ${styles.badgeSuccess}`}>{t.batchProgress.statusDone}</span>
                     {clip.download_url && (
                       <a
-                        href={apiUrl(clip.download_url || '')}
-                        download
+                        href={apiUrl(clip.download_url)}
                         className={styles.btnDownloadClip}
                         title={t.batchProgress.downloadMp4Tooltip}
-                        onClick={async (event) => {
-                          // Fetch through the configured LAN backend URL, then download
-                          // a same-origin Blob URL. This works around Android WebView
-                          // ignoring the download attribute on cross-origin MP4 links.
-                          event.preventDefault();
-                          try {
-                            const downloadPath: string = clip.download_url ?? '';
-                            if (downloadPath.length === 0) throw new Error('URL download MP4 tidak tersedia.');
-                            const response = await fetch(apiUrl(downloadPath));
-                            if (!response.ok) {
-                              const detail = await response.text().catch(() => '');
-                              throw new Error(detail || `HTTP ${response.status}`);
-                            }
-                            const blob = await response.blob();
-                            const safeTitle = (clip.title || `clip_${idx + 1}`)
-                              .replace(/[\\/*?:"<>|]/g, '')
-                              .trim() || `clip_${idx + 1}`;
-                            triggerBrowserDownload(blob, safeTitle);
-                          } catch (error) {
-                            console.error('Failed to download rendered clip:', error);
-                            alert(`Gagal mengunduh MP4: ${error instanceof Error ? error.message : String(error)}`);
-                          }
-                        }}
                       >
                         [v] MP4
                       </a>
