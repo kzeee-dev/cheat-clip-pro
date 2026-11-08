@@ -117,9 +117,21 @@ async def run_raw_clip_download_job(
     seg_filename = f"{safe_id}_clip_{int(start_time)}_{int(end_time)}_{int(time.time())}_raw.mp4"
     out_path = EXPORTS_DIR / seg_filename
 
+    def on_progress(info: dict):
+        job = raw_clip_download_jobs.get(job_id)
+        if not job:
+            return
+        job["status"] = "downloading"
+        job["download_percent"] = max(0.0, min(100.0, float(info.get("percent", 0) or 0)))
+        job["downloaded"] = info.get("downloaded", "")
+        job["total"] = info.get("total", "")
+        job["speed"] = info.get("speed", "")
+        job["eta"] = info.get("eta", "")
+
     try:
         raw_clip_download_jobs[job_id]["status"] = "downloading"
-        raw_clip_download_jobs[job_id]["progress_percent"] = 25.0
+        raw_clip_download_jobs[job_id]["progress_percent"] = 0.0
+        raw_clip_download_jobs[job_id]["download_percent"] = 0.0
 
         # Optimization: Check if a full raw video already exists locally in UPLOADS_DIR, EXPORTS_DIR or TEMP_DIR
         local_candidates = []
@@ -217,7 +229,8 @@ async def run_raw_clip_download_job(
                 start_time,
                 end_time,
                 temp_name,
-                cookies_content
+                cookies_content,
+                on_progress
             )
             if downloaded_temp and os.path.exists(downloaded_temp):
                 if out_path.exists():
@@ -250,6 +263,7 @@ async def run_raw_clip_download_job(
         if success and out_path.exists() and is_valid_mp4(out_path):
             raw_clip_download_jobs[job_id]["status"] = "ready"
             raw_clip_download_jobs[job_id]["progress_percent"] = 100.0
+            raw_clip_download_jobs[job_id]["download_percent"] = 100.0
             raw_clip_download_jobs[job_id]["download_url"] = f"/api/download-rendered/{seg_filename}?title={quote(download_title)}"
             raw_clip_download_jobs[job_id]["filename"] = f"{download_title}.mp4"
             logger.info(f"Raw clip '{download_title}' ready at {out_path}")
