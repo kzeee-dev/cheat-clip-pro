@@ -174,6 +174,7 @@ export interface RenderClipStatus {
   download_total?: string;
   download_speed?: string;
   download_eta?: string;
+  download_phase?: 'download' | 'stream_trim' | 'local_prepare' | string;
   download_url?: string;
   error_message?: string;
   error?: string;
