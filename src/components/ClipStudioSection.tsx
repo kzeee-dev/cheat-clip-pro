@@ -5756,6 +5756,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                         clip.download_url ? (
                           <a
                             href={dlUrlWithTitle}
+                            onClick={(event) => handleDownloadRenderedClip(event, dlUrlWithTitle, `${finalClipName}.mp4`)}
                             download={`${finalClipName}.mp4`}
                             className="quick-dl-btn"
                             title={`Download ${finalClipName}.mp4`}
