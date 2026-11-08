@@ -305,3 +305,69 @@
   font-family: var(--font-mono);
   color: var(--text-muted);
 }
+
+
+/* Live source-media download metrics */
+.downloadProgressWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: min(260px, 48vw);
+  min-width: 150px;
+}
+
+.downloadProgressTrack {
+  height: 5px;
+  width: 100%;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-color);
+}
+
+.downloadProgressFill {
+  height: 100%;
+  background: var(--gradient-primary);
+  transition: width 0.3s ease;
+}
+
+.downloadProgressMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  line-height: 1.35;
+}
+
+.downloadProgressMeta span:first-child {
+  overflow-wrap: anywhere;
+}
+
+.downloadProgressMeta span:last-child {
+  color: var(--status-success);
+  white-space: nowrap;
+}
+
+.downloadEta {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  text-align: right;
+}
+
+@media (max-width: 520px) {
+  .itemRow {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+
+  .itemColTitle {
+    max-width: 100%;
+  }
+
+  .downloadProgressWrap {
+    width: 100%;
+  }
+}
