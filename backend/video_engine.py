@@ -849,6 +849,10 @@ def _run_ytdlp_with_progress(cmd, timeout, progress_callback=None):
     reader = threading.Thread(target=_reader, name="yt-dlp-progress-reader", daemon=True)
     reader.start()
     started = time.monotonic()
+    last_progress_at = started
+    last_progress_payload = {
+        "percent": 0.0, "downloaded": "", "total": "", "speed": "", "eta": ""
+    }
     output_lines = []
     finished = False
     while not finished:
@@ -869,6 +873,16 @@ def _run_ytdlp_with_progress(cmd, timeout, progress_callback=None):
         except queue.Empty:
             if process.poll() is not None and not reader.is_alive():
                 break
+            # Publish honest activity heartbeats while yt-dlp is waiting for
+            # YouTube/network data. Keep the last real percentage unchanged.
+            if progress_callback and time.monotonic() - last_progress_at >= 2.0:
+                wait_seconds = int(time.monotonic() - last_progress_at)
+                progress_callback({
+                    **last_progress_payload,
+                    "speed": f"Menunggu respons jaringan ({wait_seconds} dtk)",
+                    "heartbeat": True,
+                })
+                last_progress_at = time.monotonic()
             continue
         if line is None:
             finished = True
@@ -883,13 +897,15 @@ def _run_ytdlp_with_progress(cmd, timeout, progress_callback=None):
                     percent = float(re.sub(r"[^0-9.]", "", pct) or 0)
                 except ValueError:
                     percent = 0.0
-                progress_callback({
+                last_progress_payload = {
                     "percent": percent,
                     "downloaded": downloaded if downloaded != "NA" else "",
                     "total": total if total != "NA" else "",
                     "speed": speed if speed != "NA" else "",
                     "eta": eta if eta != "NA" else "",
-                })
+                }
+                last_progress_at = time.monotonic()
+                progress_callback(last_progress_payload)
     try:
         process.wait(timeout=2)
     except Exception:
@@ -1176,11 +1192,17 @@ def download_clip_segment(
                             downloaded_label = f"{current_size / (1024 * 1024):.1f} MB"
                         except OSError:
                             downloaded_label = ""
+                        heartbeat = bool(info.get("heartbeat"))
+                        speed_label = (
+                            info.get("speed", "Menunggu data jaringan")
+                            if heartbeat
+                            else f"{info.get('speed', '0x')} proses FFmpeg"
+                        )
                         progress_callback({
                             "percent": info.get("percent", 0.0),
                             "downloaded": downloaded_label,
                             "total": "ukuran hasil akhir belum diketahui",
-                            "speed": f"{info.get('speed', '0x')} proses FFmpeg",
+                            "speed": speed_label,
                             "eta": "",
                         })
 
@@ -3494,6 +3516,11 @@ def _run_ffmpeg_with_progress(cmd, timeout, progress_callback, duration):
         reader.start()
         deadline = time.monotonic() + timeout
         stream_finished = False
+        last_progress_at = time.monotonic()
+        last_progress_payload = {
+            "frame": 0, "fps": 0.0, "time": 0.0,
+            "speed": "0x", "percent": 0.0, "status": "waiting"
+        }
 
         while not stream_finished:
             if time.monotonic() >= deadline:
@@ -3506,6 +3533,17 @@ def _run_ffmpeg_with_progress(cmd, timeout, progress_callback, duration):
             except queue.Empty:
                 if process.poll() is not None and not reader.is_alive():
                     break
+                # FFmpeg's media-time percentage cannot advance while an HTTP
+                # input is stalled. Send a heartbeat without faking progress.
+                if progress_callback and time.monotonic() - last_progress_at >= 2.0:
+                    wait_seconds = int(time.monotonic() - last_progress_at)
+                    progress_callback({
+                        **last_progress_payload,
+                        "speed": f"Menunggu data jaringan ({wait_seconds} dtk)",
+                        "status": "waiting",
+                        "heartbeat": True,
+                    })
+                    last_progress_at = time.monotonic()
                 continue
 
             if line is None:
@@ -3528,14 +3566,16 @@ def _run_ffmpeg_with_progress(cmd, timeout, progress_callback, duration):
                         + int(parts[-3]) * 3600
                     ) if len(parts) == 3 else 0.0
 
-                    progress_callback({
+                    last_progress_payload = {
                         "frame": int(metrics.get("frame", 0) or 0),
                         "fps": float(metrics.get("fps", 0) or 0),
                         "time": seconds,
                         "speed": metrics.get("speed", "0x"),
                         "percent": min(100.0, max(0.0, seconds / max(duration, 0.1) * 100)),
-                        "status": value
-                    })
+                        "status": value,
+                    }
+                    last_progress_at = time.monotonic()
+                    progress_callback(last_progress_payload)
                 except Exception:
                     logger.debug("Could not publish FFmpeg progress", exc_info=True)
 
