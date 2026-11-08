@@ -102,6 +102,7 @@ except ImportError:
         detect_hardware_support,
         is_valid_mp4,
         download_clip_segment,
+        _run_ffmpeg_with_progress,
         download_full_raw_video,
         transcribe_clip_words,
         has_emoji,
