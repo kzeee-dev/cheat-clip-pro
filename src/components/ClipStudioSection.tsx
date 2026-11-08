@@ -4417,6 +4417,27 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                         {Math.floor(clip.end_time / 60)}:{(clip.end_time % 60).toFixed(0).padStart(2, '0')} (
                         {(clip.end_time - clip.start_time).toFixed(0)}s) · Score: {clip.virality_score}%
                       </span>
+                      {(clip.score_reason || clip.hook_strength !== undefined) && (
+                        <details style={{ marginTop: '0.35rem', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                          <summary style={{ cursor: 'pointer', color: 'var(--accent-primary)', fontWeight: 600 }}>
+                            AI Viral Intelligence · Rincian skor
+                          </summary>
+                          {clip.score_reason && <p style={{ margin: '0.4rem 0', lineHeight: 1.4 }}>{clip.score_reason}</p>}
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.3rem 0.7rem' }}>
+                            {([
+                              ['Hook', clip.hook_strength],
+                              ['Emosi', clip.emotional_impact],
+                              ['Konteks mandiri', clip.standalone_value],
+                              ['Kejelasan', clip.clarity],
+                              ['Potensi dibagikan', clip.shareability],
+                            ] as [string, number | undefined][]).map(([label, value]) => (
+                              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.4rem' }}>
+                                <span>{label}</span><strong>{typeof value === 'number' ? value : '—'}/100</strong>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
                     </div>
                   </div>
                 );
