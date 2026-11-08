@@ -26,51 +26,6 @@ export const BatchRenderProgressModal: React.FC<BatchRenderProgressModalProps> =
   const completedCount = progress.clips.filter(c => c.status === 'completed').length;
   const overallPercent = Math.round((completedCount / (progress.total_clips || 1)) * 100);
 
-  const handleDownloadClip = async (
-    event: React.MouseEvent<HTMLAnchorElement>,
-    downloadPath: string,
-    fallbackName: string
-  ) => {
-    event.preventDefault();
-
-    try {
-      const response = await fetch(apiUrl(downloadPath), {
-        method: 'GET',
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        throw new Error(`Download gagal (HTTP ${response.status})`);
-      }
-
-      const blob = await response.blob();
-      if (!blob.size) {
-        throw new Error('File MP4 kosong.');
-      }
-
-      const objectUrl = URL.createObjectURL(blob);
-      const disposition = response.headers.get('content-disposition') || '';
-      const filenameMatch = disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
-      const filename = filenameMatch?.[1]
-        ? decodeURIComponent(filenameMatch[1].replace(/"/g, '').trim())
-        : fallbackName;
-      const anchor = document.createElement('a');
-      anchor.href = objectUrl;
-      anchor.download = filename;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
-    } catch (error) {
-      console.error('Individual MP4 download failed:', error);
-      window.alert(
-        error instanceof Error
-          ? error.message
-          : 'Gagal mengunduh MP4. Coba lagi atau gunakan download ZIP.'
-      );
-    }
-  };
-
   return (
     <div className="modal-backdrop">
       <div className={styles.card} onClick={e => e.stopPropagation()}>
@@ -142,7 +97,6 @@ export const BatchRenderProgressModal: React.FC<BatchRenderProgressModalProps> =
                     {clip.download_url && (
                       <a
                         href={apiUrl(clip.download_url)}
-                        onClick={(event) => handleDownloadClip(event, clip.download_url!, `clip_${idx + 1}.mp4`)}
                         className={styles.btnDownloadClip}
                         title={t.batchProgress.downloadMp4Tooltip}
                       >
