@@ -101,6 +101,35 @@ def _calibrate_viral_score(clip: dict) -> int:
     return round(sum(values[key] * weight for key, weight in weights.items()))
 
 
+def _snap_clip_to_sentence_boundaries(start: float, end: float, transcript: list, start_bound: float, end_bound: float, min_duration: float, max_duration: float, tolerance: float = 1.25) -> tuple[float, float]:
+    """Snap AI-proposed cuts to nearby spoken-line boundaries without breaking duration limits."""
+    starts = [float(line.get("start", 0.0)) for line in transcript if line.get("text")]
+    ends = [float(line.get("end", 0.0)) for line in transcript if line.get("text")]
+    if not starts or not ends:
+        return start, end
+
+    snapped_start = min(starts, key=lambda value: abs(value - start))
+    snapped_end = min(ends, key=lambda value: abs(value - end))
+    if abs(snapped_start - start) <= tolerance and start_bound <= snapped_start < end:
+        candidate_start = snapped_start
+    else:
+        candidate_start = start
+    if abs(snapped_end - end) <= tolerance and start < snapped_end <= end_bound:
+        candidate_end = snapped_end
+    else:
+        candidate_end = end
+
+    candidate_duration = candidate_end - candidate_start
+    if min_duration <= candidate_duration <= max_duration:
+        return round(candidate_start, 2), round(candidate_end, 2)
+    # If snapping both ends violates limits, try each boundary independently.
+    if candidate_start != start and min_duration <= end - candidate_start <= max_duration:
+        start = candidate_start
+    if candidate_end != end and min_duration <= candidate_end - start <= max_duration:
+        end = candidate_end
+    return round(start, 2), round(end, 2)
+
+
 def _format_parsed_dict(data: dict, channel: str, lang_code: str) -> dict:
     raw_clips = data.get("clips") or []
     formatted_clips = []
@@ -1938,6 +1967,12 @@ async def analyze_video(request: AnalyzeRequest):
                 if (new_end - new_start) >= min_target_duration or (new_end - new_start) > clip_dur:
                     start = round(new_start, 2)
                     end = round(new_end, 2)
+
+            # Improve natural cut points: prefer nearby transcript sentence starts/ends.
+            start, end = _snap_clip_to_sentence_boundaries(
+                float(start), float(end), enriched_transcript, start_bound, end_bound,
+                min_target_duration, max_target_duration
+            )
 
             if hook is None or not (start <= hook <= end):
                 hook = start
