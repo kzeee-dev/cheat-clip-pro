@@ -5883,7 +5883,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                   {clip.status === 'downloading' && (
                     <div style={{ width: '100%', marginTop: '0.35rem', padding: '0.55rem 0.65rem', borderRadius: '7px', background: 'rgba(245, 158, 11, 0.07)', border: '1px solid rgba(245, 158, 11, 0.18)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', fontSize: '0.68rem', color: '#fbbf24', marginBottom: '0.35rem' }}>
-                        <span>{clip.download_speed?.includes('proses FFmpeg') ? 'Preparing local media' : 'Downloading source media'}</span>
+                        <span>{clip.download_phase === 'stream_trim' ? 'Mengambil & memotong stream (progres media)' : clip.download_speed?.includes('proses FFmpeg') ? 'Preparing local media' : 'Downloading source media'}</span>
                         <strong>{Math.round(Math.max(0, Math.min(100, clip.download_percent ?? 0)))}%</strong>
                       </div>
                       <div style={{ height: '5px', width: '100%', borderRadius: '5px', background: 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
