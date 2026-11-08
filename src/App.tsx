@@ -55,6 +55,90 @@ declare global {
   }
 }
 
+function GlobalNetworkMonitor() {
+  const [backendPing, setBackendPing] = useState<number | null>(null);
+  const [backendState, setBackendState] = useState<'checking' | 'good' | 'fair' | 'poor' | 'offline'>('checking');
+  const [internetPing, setInternetPing] = useState<number | null>(null);
+  const [internetState, setInternetState] = useState<'checking' | 'online' | 'degraded' | 'offline'>('checking');
+
+  useEffect(() => {
+    let active = true;
+    let checking = false;
+    const check = async () => {
+      if (checking) return;
+      checking = true;
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 8000);
+      const startedAt = performance.now();
+      try {
+        const response = await fetch(apiUrl('/api/system/ping'), {
+          method: 'GET',
+          cache: 'no-store',
+          credentials: 'include',
+          headers: { 'Cache-Control': 'no-cache' },
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`Health check returned HTTP ${response.status}`);
+        const latency = Math.round(performance.now() - startedAt);
+        const data = await response.json().catch(() => null);
+        if (!active) return;
+        setBackendPing(latency);
+        setBackendState(latency < 100 ? 'good' : latency < 250 ? 'fair' : 'poor');
+        if (data && typeof data.internet_status === 'string') {
+          setInternetState(data.internet_status === 'online' || data.internet_status === 'degraded' ? data.internet_status : 'offline');
+          setInternetPing(typeof data.internet_latency_ms === 'number' ? data.internet_latency_ms : null);
+        } else {
+          setInternetState('checking');
+          setInternetPing(null);
+        }
+      } catch {
+        if (active) {
+          setBackendState('offline');
+          setInternetState('offline');
+          setBackendPing(null);
+          setInternetPing(null);
+        }
+      } finally {
+        window.clearTimeout(timeoutId);
+        checking = false;
+      }
+    };
+    void check();
+    const intervalId = window.setInterval(() => void check(), 5000);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  const backendColor = backendState === 'good' ? '#4ade80' : backendState === 'fair' ? '#facc15' : backendState === 'poor' || backendState === 'offline' ? '#f87171' : '#cbd5e1';
+  const internetColor = internetState === 'online' ? '#4ade80' : internetState === 'degraded' ? '#facc15' : internetState === 'offline' ? '#f87171' : '#cbd5e1';
+  return (
+    <div role="status" aria-live="polite" aria-label="Status jaringan global" style={{
+      position: 'fixed', right: '10px', bottom: 'calc(env(safe-area-inset-bottom, 0px) + 10px)',
+      zIndex: 1200, display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '6px',
+      maxWidth: 'calc(100vw - 20px)', pointerEvents: 'none',
+    }}>
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 9px',
+        border: `1px solid ${backendColor}66`, background: 'rgba(8, 12, 20, 0.94)', color: backendColor,
+        boxShadow: '0 3px 14px rgba(0,0,0,0.35)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)', backdropFilter: 'blur(8px)' }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor', boxShadow: '0 0 7px currentColor' }} />
+        <strong>JARINGAN</strong>
+        <span>{backendState === 'checking' ? 'Mengecek' : backendState === 'offline' ? 'Server putus' : backendState === 'good' ? 'Bagus' : backendState === 'fair' ? 'Sedang' : 'Lambat'}</span>
+        <span>{backendPing === null ? '—' : `${backendPing} ms`}</span>
+      </div>
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 9px',
+        border: `1px solid ${internetColor}66`, background: 'rgba(8, 12, 20, 0.94)', color: internetColor,
+        boxShadow: '0 3px 14px rgba(0,0,0,0.35)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)', backdropFilter: 'blur(8px)' }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor', boxShadow: '0 0 7px currentColor' }} />
+        <strong>INTERNET</strong>
+        <span>{internetState === 'checking' ? 'Belum terukur' : internetState === 'online' ? 'Stabil' : internetState === 'degraded' ? 'Terbatas' : 'Offline'}</span>
+        <span>{internetPing === null ? '—' : `${internetPing} ms`}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const { t } = useLanguage();
   const [appZoom, setAppZoom] = useState<number>(() => {
@@ -2909,6 +2993,7 @@ Transcript:
         </div>
       )}
 
+      {workflowTab !== 'clipper' && <GlobalNetworkMonitor />}
       <div className="app-zoom-wrapper" style={{ zoom: appZoom / 100 }}>
       {/* Full-Width Cyber Header Bar (johansa.com style - Edge-to-Edge Solid Dark) */}
       <div className="app-header-wrapper">
