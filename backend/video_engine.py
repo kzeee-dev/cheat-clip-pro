@@ -1515,6 +1515,7 @@ def download_full_raw_video(
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
+                start_new_session=(os.name == "posix"),
             )
 
             # Drain stdout on a dedicated thread so a stalled network request
@@ -1552,6 +1553,11 @@ def download_full_raw_video(
                 idle_timeout = 300
             started_at = time.monotonic()
             last_output_at = started_at
+            last_progress_at = started_at
+            last_heartbeat_at = started_at
+            last_progress_payload = {
+                "percent": 0.0, "downloaded": "", "total": "", "speed": "", "eta": ""
+            }
             reader_finished = False
             timeout_reason = None
 
@@ -1564,7 +1570,16 @@ def download_full_raw_video(
                 try:
                     line = output_queue.get(timeout=min(1.0, total_timeout - elapsed))
                 except queue.Empty:
-                    if time.monotonic() - last_output_at >= idle_timeout:
+                    now = time.monotonic()
+                    if progress_callback and now - last_heartbeat_at >= 2.0:
+                        wait_seconds = int(now - last_progress_at)
+                        progress_callback({
+                            **last_progress_payload,
+                            "speed": f"Menunggu respons jaringan ({wait_seconds} dtk)",
+                            "heartbeat": True,
+                        })
+                        last_heartbeat_at = now
+                    if now - last_output_at >= idle_timeout:
                         timeout_reason = f"no yt-dlp output for {idle_timeout}s"
                         break
                     continue
@@ -1589,13 +1604,16 @@ def download_full_raw_video(
                             pct_val = float(clean_pct) if clean_pct else 0.0
                         except Exception:
                             pct_val = 0.0
-                        progress_callback({
+                        last_progress_payload = {
                             "percent": pct_val,
                             "downloaded": dl_str.strip() if dl_str and dl_str != "NA" else f"{pct_val:.1f}%",
                             "total": tot_str.strip() if tot_str and tot_str != "NA" else "",
                             "speed": spd_str.strip() if spd_str and spd_str != "NA" else "",
                             "eta": eta_str.strip() if eta_str and eta_str != "NA" else ""
-                        })
+                        }
+                        last_progress_at = time.monotonic()
+                        last_heartbeat_at = last_progress_at
+                        progress_callback(last_progress_payload)
                 elif "[download]" in clean_line and progress_callback:
                     match = re.search(r'([0-9]+(?:\.[0-9]+)?)\s*%', clean_line)
                     if match:
@@ -1606,30 +1624,22 @@ def download_full_raw_video(
                         spd_match = re.search(r'at\s+([0-9.]+\s*[a-zA-Z]+/s)', clean_line)
                         eta_match = re.search(r'ETA\s+([0-9:]+)', clean_line)
                         tot_match = re.search(r'of\s+~?([0-9.]+\s*[a-zA-Z]+)', clean_line)
-                        progress_callback({
+                        last_progress_payload = {
                             "percent": pct_val,
                             "downloaded": f"{pct_val:.1f}%",
                             "total": tot_match.group(1) if tot_match else "",
                             "speed": spd_match.group(1) if spd_match else "",
                             "eta": eta_match.group(1) if eta_match else ""
-                        })
+                        }
+                        last_progress_at = time.monotonic()
+                        last_heartbeat_at = last_progress_at
+                        progress_callback(last_progress_payload)
 
             if timeout_reason:
                 logger.warning(
                     f"Full raw video download stopped for {clean_url} ({mode_label}): {timeout_reason}"
                 )
-                try:
-                    process.terminate()
-                    process.wait(timeout=5)
-                except Exception:
-                    try:
-                        process.kill()
-                    except Exception:
-                        pass
-                    try:
-                        process.wait(timeout=5)
-                    except Exception:
-                        pass
+                _terminate_process_tree(process)
                 if process.stdout:
                     try:
                         process.stdout.close()
