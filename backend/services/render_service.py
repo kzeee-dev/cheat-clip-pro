@@ -6,7 +6,7 @@ import re
 import subprocess
 import zipfile
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from backend.config import (
     EXPORTS_DIR,
