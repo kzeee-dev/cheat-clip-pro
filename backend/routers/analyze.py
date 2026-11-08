@@ -1975,6 +1975,9 @@ async def analyze_video(request: AnalyzeRequest):
         if is_auto_clip_count and len(final_clips) > 200:
             final_clips = final_clips[:200]
 
+        # Re-sort after weighted calibration so displayed ranking matches final scores.
+        final_clips.sort(key=lambda clip: clip.virality_score, reverse=True)
+
         response_heatmap = [
             HeatmapPoint(
                 start_time=float(pt.get('start_time', 0.0)),
