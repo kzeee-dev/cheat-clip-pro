@@ -60,6 +60,7 @@ function GlobalNetworkMonitor() {
   const [backendState, setBackendState] = useState<'checking' | 'good' | 'fair' | 'poor' | 'offline'>('checking');
   const [internetPing, setInternetPing] = useState<number | null>(null);
   const [internetState, setInternetState] = useState<'checking' | 'online' | 'degraded' | 'offline'>('checking');
+  const [monitorError, setMonitorError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -74,14 +75,13 @@ function GlobalNetworkMonitor() {
         const response = await fetch(apiUrl('/api/system/ping'), {
           method: 'GET',
           cache: 'no-store',
-          credentials: 'include',
-          headers: { 'Cache-Control': 'no-cache' },
           signal: controller.signal,
         });
         if (!response.ok) throw new Error(`Health check returned HTTP ${response.status}`);
         const latency = Math.round(performance.now() - startedAt);
         const data = await response.json().catch(() => null);
         if (!active) return;
+        setMonitorError(null);
         setBackendPing(latency);
         setBackendState(latency < 100 ? 'good' : latency < 250 ? 'fair' : 'poor');
         if (data && typeof data.internet_status === 'string') {
@@ -91,8 +91,15 @@ function GlobalNetworkMonitor() {
           setInternetState('checking');
           setInternetPing(null);
         }
-      } catch {
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        console.warn('[GlobalNetworkMonitor] Health check failed', {
+          url: apiUrl('/api/system/ping'),
+          origin: window.location.origin,
+          error: detail,
+        });
         if (active) {
+          setMonitorError(detail);
           setBackendState('offline');
           setInternetState('offline');
           setBackendPing(null);
@@ -135,6 +142,7 @@ function GlobalNetworkMonitor() {
         <span>{internetState === 'checking' ? 'Belum terukur' : internetState === 'online' ? 'Stabil' : internetState === 'degraded' ? 'Terbatas' : 'Offline'}</span>
         <span>{internetPing === null ? '—' : `${internetPing} ms`}</span>
       </div>
+      {monitorError && <div title={monitorError} style={{ width: '100%', textAlign: 'right', color: '#fca5a5', fontSize: '0.6rem', fontFamily: 'var(--font-mono)' }}>DEBUG: {monitorError.slice(0, 110)}</div>}
     </div>
   );
 }
