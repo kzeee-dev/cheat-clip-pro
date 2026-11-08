@@ -17,8 +17,13 @@ const DEFAULT_NATIVE_API_BASE_URL = Capacitor.isNativePlatform()
   ? 'http://localhost:8000'
   : '';
 
+// Native Android must always use the device loopback. The production .env
+// may contain a LAN IP for browser deployments, which is not reliable inside
+// the installed app and can point to a different network interface.
 const API_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL || DEFAULT_NATIVE_API_BASE_URL
+  Capacitor.isNativePlatform()
+    ? DEFAULT_NATIVE_API_BASE_URL
+    : (import.meta.env.VITE_API_BASE_URL || DEFAULT_NATIVE_API_BASE_URL)
 ).replace(/\/+$/, '');
 
 export function apiUrl(path: string): string {
