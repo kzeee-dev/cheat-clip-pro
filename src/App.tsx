@@ -2993,7 +2993,7 @@ Transcript:
         </div>
       )}
 
-      <GlobalNetworkMonitor />}
+      <GlobalNetworkMonitor />
       <div className="app-zoom-wrapper" style={{ zoom: appZoom / 100 }}>
       {/* Full-Width Cyber Header Bar (johansa.com style - Edge-to-Edge Solid Dark) */}
       <div className="app-header-wrapper">
