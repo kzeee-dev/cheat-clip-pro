@@ -69,6 +69,30 @@ from backend.utils.text import (
 )
 
 
+def _calibrate_viral_score(clip: dict) -> int:
+    """Use a transparent weighted score when component ratings are available."""
+    weights = {
+        "hook_strength": 0.25,
+        "emotional_impact": 0.20,
+        "standalone_value": 0.25,
+        "clarity": 0.15,
+        "shareability": 0.15,
+    }
+    values = {}
+    for key in weights:
+        try:
+            values[key] = max(0, min(100, int(float(clip.get(key, 0) or 0))))
+        except (TypeError, ValueError):
+            values[key] = 0
+    # Older models and recovery paths may not return component scores.
+    if not any(values.values()):
+        try:
+            return max(0, min(100, int(float(clip.get("virality_score", 0) or 0))))
+        except (TypeError, ValueError):
+            return 0
+    return round(sum(values[key] * weight for key, weight in weights.items()))
+
+
 def _format_parsed_dict(data: dict, channel: str, lang_code: str) -> dict:
     raw_clips = data.get("clips") or []
     formatted_clips = []
@@ -1925,7 +1949,7 @@ async def analyze_video(request: AnalyzeRequest):
                 start_time=start,
                 end_time=end,
                 hook_time=hook,
-                virality_score=raw_clip.get('virality_score', 0),
+                virality_score=_calibrate_viral_score(raw_clip),
                 hook_strength=raw_clip.get('hook_strength', 0),
                 emotional_impact=raw_clip.get('emotional_impact', 0),
                 standalone_value=raw_clip.get('standalone_value', 0),
