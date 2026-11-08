@@ -380,7 +380,13 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
         return;
       }
 
-      const response = await resilientFetch(apiUrl(downloadPath), {
+      // Client-side renders expose blob: URLs; backend renders expose API paths.
+      // Do not pass blob: URLs through apiUrl(), which would corrupt them into
+      // a relative /blob:... path and trigger Android's HTTP-only download guard.
+      const resolvedDownloadUrl = /^(https?:|blob:)/i.test(downloadPath)
+        ? downloadPath
+        : apiUrl(downloadPath);
+      const response = await resilientFetch(resolvedDownloadUrl, {
         method: 'GET',
         credentials: 'include',
         maxRetries: 1,
