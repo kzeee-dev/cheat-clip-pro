@@ -3903,6 +3903,34 @@ def render_clip_to_mp4(
         logger.warning(f"Hardware encoder ({chosen_encoder_name}) timed out after {render_timeout}s.")
         res = None
 
+    # Some hardware encoders can exit successfully but still leave an unusable
+    # container (driver/device quirks). Validate the produced MP4 before accepting
+    # the fast path so the existing libx264 fallback can recover automatically.
+    if (
+        res is not None
+        and res.returncode == 0
+        and (
+            not os.path.exists(output_mp4_path)
+            or not is_valid_mp4(output_mp4_path)
+        )
+    ):
+        logger.warning(
+            "Encoder %s returned success but produced an invalid MP4; "
+            "triggering the safe CPU fallback.",
+            chosen_encoder_name,
+        )
+        try:
+            if os.path.exists(output_mp4_path):
+                os.unlink(output_mp4_path)
+        except OSError:
+            pass
+        res = subprocess.CompletedProcess(
+            args=cmd,
+            returncode=1,
+            stdout="",
+            stderr="Encoder exited successfully but output MP4 failed validation.",
+        )
+
     if res is None or res.returncode != 0:
         err_msg_initial = res.stderr[:250] if (res and res.stderr) else f"Timed out after {render_timeout}s"
         logger.warning(f"Hardware encoder ({chosen_encoder_name}) failed or timed out: {err_msg_initial}")
