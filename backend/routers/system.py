@@ -24,6 +24,21 @@ from backend.services.system_service import (
 router = APIRouter(tags=["System"])
 
 
+@router.get("/api/system/ping")
+async def api_system_ping():
+    """Lightweight no-cache endpoint for measuring client-to-backend round-trip latency."""
+    from time import time
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(
+        content={"ok": True, "timestamp": time()},
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+        },
+    )
+
+
 def verify_admin_access(
     x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
     authorization: Optional[str] = Header(None)
