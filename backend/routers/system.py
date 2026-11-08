@@ -1,5 +1,8 @@
+import asyncio
 import logging
 import os
+import socket
+import time
 import secrets
 import subprocess
 import sys
@@ -24,14 +27,37 @@ from backend.services.system_service import (
 router = APIRouter(tags=["System"])
 
 
+def _probe_internet_tcp(host: str, timeout: float = 1.8):
+    """Measure DNS + TCP/TLS-port reachability without requiring raw ICMP privileges."""
+    started = time.perf_counter()
+    try:
+        with socket.create_connection((host, 443), timeout=timeout):
+            return {"host": host, "ok": True, "latency_ms": round((time.perf_counter() - started) * 1000)}
+    except OSError as exc:
+        return {"host": host, "ok": False, "error": str(exc)[:120]}
+
+
 @router.get("/api/system/ping")
 async def api_system_ping():
-    """Lightweight no-cache endpoint for measuring client-to-backend round-trip latency."""
-    from time import time
+    """Report app/backend availability plus independent internet TCP reachability probes."""
     from fastapi.responses import JSONResponse
 
+    probes = await asyncio.gather(
+        asyncio.to_thread(_probe_internet_tcp, "www.google.com"),
+        asyncio.to_thread(_probe_internet_tcp, "www.youtube.com"),
+    )
+    successful = [probe["latency_ms"] for probe in probes if probe.get("ok")]
+    internet_latency = round(sum(successful) / len(successful)) if successful else None
+    internet_status = "online" if len(successful) == 2 else "degraded" if successful else "offline"
+
     return JSONResponse(
-        content={"ok": True, "timestamp": time()},
+        content={
+            "ok": True,
+            "timestamp": time.time(),
+            "internet_status": internet_status,
+            "internet_latency_ms": internet_latency,
+            "internet_probes": probes,
+        },
         headers={
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
             "Pragma": "no-cache",
