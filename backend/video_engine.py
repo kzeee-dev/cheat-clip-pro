@@ -6,6 +6,7 @@ import time
 import shutil
 import logging
 import subprocess
+import signal
 import unicodedata
 import math
 import urllib.parse
@@ -832,6 +833,50 @@ def transcribe_local_video_file(
     return transcript_lines
 
 
+def _terminate_process_tree(process, grace_seconds=5):
+    """Terminate yt-dlp and every FFmpeg child in its isolated process group."""
+    if process is None:
+        return
+
+    # yt-dlp's section downloader launches FFmpeg, which inherits the output
+    # pipe. Killing only yt-dlp can leave FFmpeg orphaned and the reader blocked.
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        except Exception:
+            logger.debug("Could not send SIGTERM to yt-dlp process group", exc_info=True)
+    elif process.poll() is None:
+        try:
+            process.terminate()
+        except Exception:
+            pass
+
+    try:
+        process.wait(timeout=grace_seconds)
+    except Exception:
+        pass
+
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except Exception:
+            logger.debug("Could not send SIGKILL to yt-dlp process group", exc_info=True)
+    elif process.poll() is None:
+        try:
+            process.kill()
+        except Exception:
+            pass
+
+    try:
+        process.wait(timeout=2)
+    except Exception:
+        pass
+
+
 def _run_ytdlp_with_progress(cmd, timeout, progress_callback=None):
     """Run yt-dlp while streaming byte, speed, ETA and percentage updates to the UI."""
     progress_cmd = list(cmd) + [
@@ -845,6 +890,9 @@ def _run_ytdlp_with_progress(cmd, timeout, progress_callback=None):
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
+        # Isolate yt-dlp and its FFmpeg child so timeout cleanup cannot leave
+        # network downloads running after the parent process has exited.
+        start_new_session=(os.name == "posix"),
     )
     output_queue = queue.Queue()
 
@@ -869,15 +917,7 @@ def _run_ytdlp_with_progress(cmd, timeout, progress_callback=None):
     while not finished:
         elapsed = time.monotonic() - started
         if elapsed >= timeout:
-            try:
-                process.terminate()
-                process.wait(timeout=5)
-            except Exception:
-                try:
-                    process.kill()
-                    process.wait(timeout=5)
-                except Exception:
-                    pass
+            _terminate_process_tree(process)
             raise subprocess.TimeoutExpired(progress_cmd, timeout, output="".join(output_lines))
         try:
             line = output_queue.get(timeout=min(0.75, max(0.05, timeout - elapsed)))
@@ -923,6 +963,15 @@ def _run_ytdlp_with_progress(cmd, timeout, progress_callback=None):
         process.wait(timeout=2)
     except Exception:
         pass
+    finally:
+        # Also reap any FFmpeg descendants if yt-dlp exited unexpectedly while
+        # a child still held stdout open. This prevents orphaned .part writers.
+        _terminate_process_tree(process)
+        if process.stdout is not None:
+            try:
+                process.stdout.close()
+            except Exception:
+                pass
     output = "".join(output_lines)
     return SimpleNamespace(returncode=process.returncode, stdout=output, stderr=output)
 
