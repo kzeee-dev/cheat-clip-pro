@@ -164,6 +164,7 @@ async def render_single_batch_clip(
             clip_status["download_total"] = info.get("total", "")
             clip_status["download_speed"] = info.get("speed", "")
             clip_status["download_eta"] = info.get("eta", "")
+            clip_status["download_phase"] = info.get("phase", "download")
             clip_status["progress_percent"] = 15 + int(percent * 0.25)
 
         raw_path = await asyncio.to_thread(
