@@ -1217,6 +1217,7 @@ def download_clip_segment(
                                 "total": "ukuran hasil akhir belum diketahui",
                                 "speed": speed_label,
                                 "eta": "",
+                                "phase": "stream_trim",
                             })
 
                         trim_res = _run_ffmpeg_with_progress(
