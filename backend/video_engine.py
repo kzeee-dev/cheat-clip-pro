@@ -996,7 +996,25 @@ def download_clip_segment(
             "-movflags", "+faststart",
             str(output_path)
         ]
-        res = subprocess.run(slice_cmd, capture_output=True, text=True, timeout=slice_timeout)
+        def _on_local_slice_progress(info):
+            if not progress_callback:
+                return
+            try:
+                current_size = output_path.stat().st_size if output_path.exists() else 0
+                downloaded_label = f"{current_size / (1024 * 1024):.1f} MB"
+            except OSError:
+                downloaded_label = ""
+            progress_callback({
+                "percent": info.get("percent", 0.0),
+                "downloaded": downloaded_label,
+                "total": "ukuran hasil akhir belum diketahui",
+                "speed": f"{info.get('speed', '0x')} proses FFmpeg",
+                "eta": "",
+            })
+
+        res = _run_ffmpeg_with_progress(
+            slice_cmd, slice_timeout, _on_local_slice_progress, clip_duration
+        )
         if output_path.exists() and is_valid_mp4(output_path):
             return str(output_path)
         if output_path.exists():
@@ -1150,7 +1168,28 @@ def download_clip_segment(
                         "-movflags", "+faststart",
                         str(output_path)
                     ]
-                    trim_res = subprocess.run(trim_cmd, capture_output=True, text=True, timeout=min(trim_timeout, max(1, int(overall_deadline - time.monotonic()))))
+                    def _on_direct_stream_progress(info):
+                        if not progress_callback:
+                            return
+                        try:
+                            current_size = output_path.stat().st_size if output_path.exists() else 0
+                            downloaded_label = f"{current_size / (1024 * 1024):.1f} MB"
+                        except OSError:
+                            downloaded_label = ""
+                        progress_callback({
+                            "percent": info.get("percent", 0.0),
+                            "downloaded": downloaded_label,
+                            "total": "ukuran hasil akhir belum diketahui",
+                            "speed": f"{info.get('speed', '0x')} proses FFmpeg",
+                            "eta": "",
+                        })
+
+                    trim_res = _run_ffmpeg_with_progress(
+                        trim_cmd,
+                        min(trim_timeout, max(1, int(overall_deadline - time.monotonic()))),
+                        _on_direct_stream_progress,
+                        clip_duration
+                    )
                     if trim_res.returncode == 0 and is_valid_mp4(output_path):
                         logger.info(f"Successfully trimmed stream URLs with FFmpeg ({mode_label}): {output_path} ({output_path.stat().st_size} bytes)")
                         return str(output_path)
