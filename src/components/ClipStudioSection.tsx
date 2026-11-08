@@ -365,7 +365,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
       checking = true;
       const startedAt = performance.now();
       const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 3500);
+      const timeoutId = window.setTimeout(() => controller.abort(), 8000);
       try {
         const requestOptions: RequestInit = {
           method: 'GET',
@@ -382,11 +382,10 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
         if (!response.ok && (response.status === 404 || response.status === 405)) {
           response = await fetch(apiUrl('/api/system/version'), requestOptions);
         }
+        // HTTP 2xx is sufficient to prove the backend is reachable. Do not
+        // parse the body here: health checks must not show "offline" merely
+        // because a proxy or older backend returns an empty/non-JSON body.
         if (!response.ok) throw new Error(`Backend health check returned HTTP ${response.status}`);
-        const payload = await response.json();
-        if (!payload || typeof payload !== 'object') {
-          throw new Error('Backend health check returned an invalid response');
-        }
         const latency = Math.max(0, Math.round(performance.now() - startedAt));
         if (!active) return;
         setNetworkPing(latency);
