@@ -908,7 +908,12 @@ def _run_ytdlp_with_progress(cmd, timeout, progress_callback=None):
     reader.start()
     started = time.monotonic()
     last_progress_at = started
+    last_activity_at = started
     last_heartbeat_at = started
+    # A stalled source should not leave a merged job waiting for many minutes.
+    # Allow up to 120 seconds without either yt-dlp progress or file growth,
+    # then terminate yt-dlp/FFmpeg so the existing fallback chain can run.
+    idle_timeout = min(120, max(45, int(timeout)))
     last_progress_payload = {
         "percent": 0.0, "downloaded": "", "total": "", "speed": "", "eta": ""
     }
@@ -956,6 +961,8 @@ def _run_ytdlp_with_progress(cmd, timeout, progress_callback=None):
                 sample_elapsed = max(0.001, now - last_file_sample_at)
                 if current_file_bytes > last_file_bytes:
                     bytes_per_second = (current_file_bytes - last_file_bytes) / sample_elapsed
+                    last_activity_at = now
+                    last_progress_at = now
                     if bytes_per_second >= 1024 * 1024:
                         measured_speed = f"{bytes_per_second / (1024 * 1024):.2f} MiB/s"
                     else:
@@ -971,11 +978,23 @@ def _run_ytdlp_with_progress(cmd, timeout, progress_callback=None):
                     last_file_bytes = current_file_bytes
                     last_file_sample_at = now
                 else:
+                    idle_seconds = int(now - last_activity_at)
                     heartbeat_payload = {
                         **last_progress_payload,
-                        "speed": f"Menunggu respons jaringan ({wait_seconds} dtk)",
+                        "speed": f"Menunggu respons jaringan ({idle_seconds} dtk)",
                         "heartbeat": True,
                     }
+                    if idle_seconds >= idle_timeout:
+                        logger.warning(
+                            f"yt-dlp stalled for {idle_seconds}s without progress or file growth; "
+                            f"stopping this attempt so download fallback can run."
+                        )
+                        _terminate_process_tree(process)
+                        raise subprocess.TimeoutExpired(
+                            progress_cmd,
+                            idle_timeout,
+                            output="".join(output_lines),
+                        )
                 progress_callback(heartbeat_payload)
                 last_heartbeat_at = now
             continue
@@ -1000,6 +1019,7 @@ def _run_ytdlp_with_progress(cmd, timeout, progress_callback=None):
                     "eta": eta if eta != "NA" else "",
                 }
                 last_progress_at = time.monotonic()
+                last_activity_at = last_progress_at
                 last_heartbeat_at = last_progress_at
                 progress_callback(last_progress_payload)
     try:
