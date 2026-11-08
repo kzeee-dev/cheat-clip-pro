@@ -874,7 +874,7 @@ def _run_ytdlp_with_progress(cmd, timeout, progress_callback=None):
             finished = True
             continue
         output_lines.append(line)
-        clean = re.sub(r'\\x1b\\[[0-9;]*[a-zA-Z]', '', line.strip())
+        clean = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', line.strip())
         if progress_callback and clean.startswith("download:"):
             parts = clean[len("download:"):].strip().split("|")
             if len(parts) >= 5:
