@@ -2188,62 +2188,6 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
               {t.studio.subtext}
             </p>
 
-            <div
-              role="status"
-              aria-live="polite"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                marginTop: '0.55rem',
-                padding: '0.35rem 0.6rem',
-                border: `1px solid ${networkPingState === 'good' ? 'rgba(34,197,94,0.45)' : networkPingState === 'fair' ? 'rgba(234,179,8,0.45)' : networkPingState === 'poor' || networkPingState === 'offline' ? 'rgba(239,68,68,0.45)' : 'rgba(148,163,184,0.35)'}`,
-                background: 'rgba(15,23,42,0.45)',
-                color: networkPingState === 'good' ? '#4ade80' : networkPingState === 'fair' ? '#facc15' : networkPingState === 'poor' || networkPingState === 'offline' ? '#f87171' : '#cbd5e1',
-                fontSize: '0.7rem',
-                fontFamily: 'var(--font-mono)',
-                width: 'fit-content',
-              }}
-            >
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'currentColor', boxShadow: '0 0 7px currentColor' }} />
-              <strong>JARINGAN</strong>
-              <span>
-                {networkPingState === 'checking' ? 'Mengecek…' :
-                  networkPingState === 'offline' ? 'Tidak terhubung ke server' :
-                  networkPingState === 'good' ? 'Bagus' :
-                  networkPingState === 'fair' ? 'Sedang' : 'Lambat'}
-              </span>
-              <span style={{ opacity: 0.85 }}>
-                {networkPing !== null ? `${networkPing} ms` : '— ms'}
-              </span>
-            </div>
-            <div
-              role="status"
-              aria-live="polite"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                marginTop: '0.55rem',
-                padding: '0.35rem 0.6rem',
-                border: `1px solid ${internetState === 'online' ? 'rgba(34,197,94,0.45)' : internetState === 'degraded' ? 'rgba(234,179,8,0.45)' : internetState === 'offline' ? 'rgba(239,68,68,0.45)' : 'rgba(148,163,184,0.35)'}`,
-                background: 'rgba(15,23,42,0.45)',
-                color: internetState === 'online' ? '#4ade80' : internetState === 'degraded' ? '#facc15' : internetState === 'offline' ? '#f87171' : '#cbd5e1',
-                fontSize: '0.7rem',
-                fontFamily: 'var(--font-mono)',
-                width: 'fit-content',
-              }}
-            >
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'currentColor', boxShadow: '0 0 7px currentColor' }} />
-              <strong>INTERNET</strong>
-              <span>
-                {internetState === 'checking' ? 'Belum terukur' :
-                  internetState === 'online' ? 'Stabil' :
-                  internetState === 'degraded' ? 'Sebagian host gagal' : 'Tidak terjangkau'}
-              </span>
-              <span style={{ opacity: 0.85 }}>
-                {internetPing !== null ? `${internetPing} ms` : '— ms'}
-              </span>
             </div>
           </div>
         </div>
