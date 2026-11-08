@@ -550,7 +550,7 @@ export default function App() {
                   clearInterval(pollInterval);
                   reject(e);
                 }
-              }, 600);
+              }, 250);
             });
           }
 
