@@ -1164,64 +1164,74 @@ def download_clip_segment(
                     video_stream = urls[0]
                     audio_stream = urls[1] if len(urls) > 1 else urls[0]
 
-                    trim_timeout = max(240, min(900, int(clip_duration * 4.5) + 60))
-                    trim_cmd = [
-                        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                        "-reconnect", "1",
-                        "-reconnect_at_eof", "1",
-                        "-reconnect_streamed", "1",
-                        "-reconnect_delay_max", "5",
-                        "-ss", str(start_time),
-                        "-i", video_stream,
-                        "-ss", str(start_time),
-                        "-i", audio_stream,
-                        "-t", str(clip_duration),
-                        "-map", "0:v:0", "-map", "1:a:0?",
-                        *ACTIVE_ENCODER_ARGS,
-                        "-c:a", "aac",
-                        "-b:a", "192k",
-                        "-avoid_negative_ts", "make_zero",
-                        "-movflags", "+faststart",
-                        str(output_path)
-                    ]
-                    def _on_direct_stream_progress(info):
-                        if not progress_callback:
-                            return
-                        try:
-                            current_size = output_path.stat().st_size if output_path.exists() else 0
-                            downloaded_label = f"{current_size / (1024 * 1024):.1f} MB"
-                        except OSError:
-                            downloaded_label = ""
-                        heartbeat = bool(info.get("heartbeat"))
-                        speed_label = (
-                            info.get("speed", "Menunggu data jaringan")
-                            if heartbeat
-                            else f"{info.get('speed', '0x')} proses FFmpeg"
+                    # YouTube HLS manifest streams have already stalled for minutes on the
+                    # direct FFmpeg path. Skip that expensive retry and let yt-dlp try
+                    # its lower-resolution section-download fallbacks instead.
+                    if "manifest.googlevideo.com/api/manifest/hls_playlist/" in video_stream:
+                        last_err_snippet = "direct FFmpeg fallback skipped for stalled YouTube HLS stream"
+                        logger.warning(
+                            "Skipping direct FFmpeg stream trimming for YouTube HLS; "
+                            "continuing with yt-dlp 720p/480p fallbacks."
                         )
-                        progress_callback({
-                            "percent": info.get("percent", 0.0),
-                            "downloaded": downloaded_label,
-                            "total": "ukuran hasil akhir belum diketahui",
-                            "speed": speed_label,
-                            "eta": "",
-                        })
-
-                    trim_res = _run_ffmpeg_with_progress(
-                        trim_cmd,
-                        min(trim_timeout, max(1, int(overall_deadline - time.monotonic()))),
-                        _on_direct_stream_progress,
-                        clip_duration
-                    )
-                    if trim_res.returncode == 0 and is_valid_mp4(output_path):
-                        logger.info(f"Successfully trimmed stream URLs with FFmpeg ({mode_label}): {output_path} ({output_path.stat().st_size} bytes)")
-                        return str(output_path)
                     else:
-                        if output_path.exists():
+                        trim_timeout = max(240, min(900, int(clip_duration * 4.5) + 60))
+                        trim_cmd = [
+                            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                            "-reconnect", "1",
+                            "-reconnect_at_eof", "1",
+                            "-reconnect_streamed", "1",
+                            "-reconnect_delay_max", "5",
+                            "-ss", str(start_time),
+                            "-i", video_stream,
+                            "-ss", str(start_time),
+                            "-i", audio_stream,
+                            "-t", str(clip_duration),
+                            "-map", "0:v:0", "-map", "1:a:0?",
+                            *ACTIVE_ENCODER_ARGS,
+                            "-c:a", "aac",
+                            "-b:a", "192k",
+                            "-avoid_negative_ts", "make_zero",
+                            "-movflags", "+faststart",
+                            str(output_path)
+                        ]
+                        def _on_direct_stream_progress(info):
+                            if not progress_callback:
+                                return
                             try:
-                                output_path.unlink()
-                            except Exception:
-                                pass
-                        last_err_snippet = trim_res.stderr[:300] if (trim_res and trim_res.stderr) else "stream trimming failed"
+                                current_size = output_path.stat().st_size if output_path.exists() else 0
+                                downloaded_label = f"{current_size / (1024 * 1024):.1f} MB"
+                            except OSError:
+                                downloaded_label = ""
+                            heartbeat = bool(info.get("heartbeat"))
+                            speed_label = (
+                                info.get("speed", "Menunggu data jaringan")
+                                if heartbeat
+                                else f"{info.get('speed', '0x')} proses FFmpeg"
+                            )
+                            progress_callback({
+                                "percent": info.get("percent", 0.0),
+                                "downloaded": downloaded_label,
+                                "total": "ukuran hasil akhir belum diketahui",
+                                "speed": speed_label,
+                                "eta": "",
+                            })
+
+                        trim_res = _run_ffmpeg_with_progress(
+                            trim_cmd,
+                            min(trim_timeout, max(1, int(overall_deadline - time.monotonic()))),
+                            _on_direct_stream_progress,
+                            clip_duration
+                        )
+                        if trim_res.returncode == 0 and is_valid_mp4(output_path):
+                            logger.info(f"Successfully trimmed stream URLs with FFmpeg ({mode_label}): {output_path} ({output_path.stat().st_size} bytes)")
+                            return str(output_path)
+                        else:
+                            if output_path.exists():
+                                try:
+                                    output_path.unlink()
+                                except Exception:
+                                    pass
+                            last_err_snippet = trim_res.stderr[:300] if (trim_res and trim_res.stderr) else "stream trimming failed"
             except Exception as e:
                 logger.error(f"Fallback stream trimming failed ({mode_label}): {e}")
                 if output_path.exists():
