@@ -118,6 +118,9 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Android WebView Private Network Access: allow the trusted local app origin
+    # to call the loopback backend (127.0.0.1:8000).
+    allow_private_network=True,
 )
 
 
