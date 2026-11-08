@@ -17,6 +17,12 @@ export interface ViralClip {
   end_time: number;
   hook_time?: number;
   virality_score: number;
+  hook_strength?: number;
+  emotional_impact?: number;
+  standalone_value?: number;
+  clarity?: number;
+  shareability?: number;
+  score_reason?: string;
   key_quotes: string[];
   transcript: string;
   title_suggestion?: string;
