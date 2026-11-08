@@ -17,6 +17,7 @@ from backend.config import (
     TEMP_DIR,
     UPLOADS_DIR,
     download_clip_segment,
+    _run_ffmpeg_with_progress,
     download_full_raw_video,
     is_valid_mp4,
     logger,
@@ -177,6 +178,22 @@ async def run_raw_clip_download_job(
 
         duration_sec = max(1.0, end_time - start_time)
 
+        def on_local_trim_progress(info: dict):
+            job = raw_clip_download_jobs.get(job_id)
+            if not job:
+                return
+            try:
+                current_size = out_path.stat().st_size if out_path.exists() else 0
+                downloaded_label = f"{current_size / (1024 * 1024):.1f} MB"
+            except OSError:
+                downloaded_label = ""
+            job["status"] = "downloading"
+            job["download_percent"] = max(0.0, min(100.0, float(info.get("percent", 0) or 0)))
+            job["downloaded"] = downloaded_label
+            job["total"] = "source lokal"
+            job["speed"] = f"{info.get('speed', '0x')} proses FFmpeg"
+            job["eta"] = ""
+
         success = False
         if source_video and os.path.exists(source_video):
             try:
@@ -194,7 +211,17 @@ async def run_raw_clip_download_job(
                     str(out_path)
                 ]
                 trim_timeout = max(180, int(duration_sec * 4) + 60)
-                await asyncio.to_thread(subprocess.run, trim_cmd, check=True, timeout=trim_timeout)
+                trim_result = await asyncio.to_thread(
+                    _run_ffmpeg_with_progress,
+                    trim_cmd,
+                    trim_timeout,
+                    on_local_trim_progress,
+                    duration_sec
+                )
+                if trim_result.returncode != 0:
+                    raise subprocess.CalledProcessError(
+                        trim_result.returncode, trim_cmd, stderr=trim_result.stderr
+                    )
                 if out_path.exists() and out_path.stat().st_size > 1000:
                     success = True
             except Exception as trim_err:
@@ -214,7 +241,17 @@ async def run_raw_clip_download_job(
                         "-movflags", "+faststart",
                         str(out_path)
                     ]
-                    await asyncio.to_thread(subprocess.run, cpu_trim_cmd, check=True, timeout=trim_timeout)
+                    trim_result = await asyncio.to_thread(
+                        _run_ffmpeg_with_progress,
+                        cpu_trim_cmd,
+                        trim_timeout,
+                        on_local_trim_progress,
+                        duration_sec
+                    )
+                    if trim_result.returncode != 0:
+                        raise subprocess.CalledProcessError(
+                            trim_result.returncode, cpu_trim_cmd, stderr=trim_result.stderr
+                        )
                     if out_path.exists() and out_path.stat().st_size > 1000:
                         success = True
                 except Exception as cpu_err:
