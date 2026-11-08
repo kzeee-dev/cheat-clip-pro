@@ -364,12 +364,15 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
       if (checking) return;
       checking = true;
       const startedAt = performance.now();
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 3500);
       try {
         const response = await fetch(apiUrl('/api/system/ping'), {
           method: 'GET',
           cache: 'no-store',
           credentials: 'include',
           headers: { 'Cache-Control': 'no-cache' },
+          signal: controller.signal,
         });
         if (!response.ok) throw new Error(`Ping endpoint returned HTTP ${response.status}`);
         await response.json();
@@ -382,6 +385,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
         setNetworkPing(null);
         setNetworkPingState('offline');
       } finally {
+        window.clearTimeout(timeoutId);
         checking = false;
       }
     };
