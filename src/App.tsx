@@ -515,7 +515,7 @@ export default function App() {
             rawSourceUrl = await new Promise<string>((resolve, reject) => {
               const pollInterval = setInterval(async () => {
                 try {
-                  const statusRes = await fetch(apiUrl(`/api/download-raw-clip-status/${jobId}`));
+                  const statusRes = await fetch(apiUrl(`/api/download-raw-clip-status/${jobId}`), { method: 'GET', cache: 'no-store', credentials: 'include', headers: { 'Cache-Control': 'no-cache' } });
                   if (!statusRes.ok) {
                     clearInterval(pollInterval);
                     reject(new Error('Failed to retrieve raw stream status'));
@@ -2290,7 +2290,7 @@ export default function App() {
       await new Promise<void>((resolve, reject) => {
         const intervalId = setInterval(async () => {
           try {
-            const statusRes = await fetch(apiUrl(`/api/download-raw-status/${jobId}`));
+            const statusRes = await fetch(apiUrl(`/api/download-raw-status/${jobId}`), { method: 'GET', cache: 'no-store', credentials: 'include', headers: { 'Cache-Control': 'no-cache' } });
             if (!statusRes.ok) {
               clearInterval(intervalId);
               reject(new Error(t.rawDownload.failedToast));
@@ -2477,7 +2477,7 @@ export default function App() {
       await new Promise<void>((resolve, reject) => {
         const intervalId = setInterval(async () => {
           try {
-            const statusRes = await fetch(apiUrl(`/api/download-raw-clip-status/${jobId}`));
+            const statusRes = await fetch(apiUrl(`/api/download-raw-clip-status/${jobId}`), { method: 'GET', cache: 'no-store', credentials: 'include', headers: { 'Cache-Control': 'no-cache' } });
             if (!statusRes.ok) {
               clearInterval(intervalId);
               reject(new Error("Failed to get clip download status"));
