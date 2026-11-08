@@ -3530,6 +3530,7 @@ def _run_ffmpeg_with_progress(cmd, timeout, progress_callback, duration):
         deadline = time.monotonic() + timeout
         stream_finished = False
         last_progress_at = time.monotonic()
+        last_heartbeat_at = last_progress_at
         last_progress_payload = {
             "frame": 0, "fps": 0.0, "time": 0.0,
             "speed": "0x", "percent": 0.0, "status": "waiting"
@@ -3548,15 +3549,16 @@ def _run_ffmpeg_with_progress(cmd, timeout, progress_callback, duration):
                     break
                 # FFmpeg's media-time percentage cannot advance while an HTTP
                 # input is stalled. Send a heartbeat without faking progress.
-                if progress_callback and time.monotonic() - last_progress_at >= 2.0:
-                    wait_seconds = int(time.monotonic() - last_progress_at)
+                now = time.monotonic()
+                if progress_callback and now - last_heartbeat_at >= 2.0:
+                    wait_seconds = int(now - last_progress_at)
                     progress_callback({
                         **last_progress_payload,
                         "speed": f"Menunggu data jaringan ({wait_seconds} dtk)",
                         "status": "waiting",
                         "heartbeat": True,
                     })
-                    last_progress_at = time.monotonic()
+                    last_heartbeat_at = now
                 continue
 
             if line is None:
@@ -3588,6 +3590,7 @@ def _run_ffmpeg_with_progress(cmd, timeout, progress_callback, duration):
                         "status": value,
                     }
                     last_progress_at = time.monotonic()
+                    last_heartbeat_at = last_progress_at
                     progress_callback(last_progress_payload)
                 except Exception:
                     logger.debug("Could not publish FFmpeg progress", exc_info=True)
