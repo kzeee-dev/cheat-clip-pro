@@ -912,6 +912,20 @@ def _run_ytdlp_with_progress(cmd, timeout, progress_callback=None):
     last_progress_payload = {
         "percent": 0.0, "downloaded": "", "total": "", "speed": "", "eta": ""
     }
+    # yt-dlp can spend a long time downloading selected media without emitting
+    # progress-template lines (notably while fetching fragmented/HLS streams).
+    # Watch its .part file as a fallback so the UI still receives real byte
+    # movement and measured throughput instead of a permanent "waiting" label.
+    output_path = None
+    for output_flag in ("-o", "--output"):
+        try:
+            output_index = cmd.index(output_flag)
+            output_path = Path(cmd[output_index + 1])
+            break
+        except (ValueError, IndexError):
+            continue
+    last_file_bytes = 0
+    last_file_sample_at = started
     output_lines = []
     finished = False
     while not finished:
@@ -929,11 +943,40 @@ def _run_ytdlp_with_progress(cmd, timeout, progress_callback=None):
             now = time.monotonic()
             if progress_callback and now - last_heartbeat_at >= 2.0:
                 wait_seconds = int(now - last_progress_at)
-                progress_callback({
-                    **last_progress_payload,
-                    "speed": f"Menunggu respons jaringan ({wait_seconds} dtk)",
-                    "heartbeat": True,
-                })
+                current_file_bytes = 0
+                if output_path is not None:
+                    # yt-dlp normally writes <output>.part; some downloaders
+                    # expose the final path directly before the process exits.
+                    for candidate in (Path(str(output_path) + ".part"), output_path):
+                        try:
+                            if candidate.is_file():
+                                current_file_bytes = max(current_file_bytes, candidate.stat().st_size)
+                        except OSError:
+                            pass
+                sample_elapsed = max(0.001, now - last_file_sample_at)
+                if current_file_bytes > last_file_bytes:
+                    bytes_per_second = (current_file_bytes - last_file_bytes) / sample_elapsed
+                    if bytes_per_second >= 1024 * 1024:
+                        measured_speed = f"{bytes_per_second / (1024 * 1024):.2f} MiB/s"
+                    else:
+                        measured_speed = f"{bytes_per_second / 1024:.0f} KiB/s"
+                    downloaded_label = f"{current_file_bytes / (1024 * 1024):.1f} MiB"
+                    heartbeat_payload = {
+                        **last_progress_payload,
+                        "downloaded": downloaded_label,
+                        "speed": measured_speed,
+                        "heartbeat": True,
+                        "source": "file_size_fallback",
+                    }
+                    last_file_bytes = current_file_bytes
+                    last_file_sample_at = now
+                else:
+                    heartbeat_payload = {
+                        **last_progress_payload,
+                        "speed": f"Menunggu respons jaringan ({wait_seconds} dtk)",
+                        "heartbeat": True,
+                    }
+                progress_callback(heartbeat_payload)
                 last_heartbeat_at = now
             continue
         if line is None:
