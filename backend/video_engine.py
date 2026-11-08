@@ -850,6 +850,7 @@ def _run_ytdlp_with_progress(cmd, timeout, progress_callback=None):
     reader.start()
     started = time.monotonic()
     last_progress_at = started
+    last_heartbeat_at = started
     last_progress_payload = {
         "percent": 0.0, "downloaded": "", "total": "", "speed": "", "eta": ""
     }
@@ -875,14 +876,15 @@ def _run_ytdlp_with_progress(cmd, timeout, progress_callback=None):
                 break
             # Publish honest activity heartbeats while yt-dlp is waiting for
             # YouTube/network data. Keep the last real percentage unchanged.
-            if progress_callback and time.monotonic() - last_progress_at >= 2.0:
-                wait_seconds = int(time.monotonic() - last_progress_at)
+            now = time.monotonic()
+            if progress_callback and now - last_heartbeat_at >= 2.0:
+                wait_seconds = int(now - last_progress_at)
                 progress_callback({
                     **last_progress_payload,
                     "speed": f"Menunggu respons jaringan ({wait_seconds} dtk)",
                     "heartbeat": True,
                 })
-                last_progress_at = time.monotonic()
+                last_heartbeat_at = now
             continue
         if line is None:
             finished = True
@@ -905,6 +907,7 @@ def _run_ytdlp_with_progress(cmd, timeout, progress_callback=None):
                     "eta": eta if eta != "NA" else "",
                 }
                 last_progress_at = time.monotonic()
+                last_heartbeat_at = last_progress_at
                 progress_callback(last_progress_payload)
     try:
         process.wait(timeout=2)
