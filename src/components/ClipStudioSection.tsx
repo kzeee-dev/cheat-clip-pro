@@ -386,11 +386,13 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
       const resolvedDownloadUrl = /^(https?:|blob:)/i.test(downloadPath)
         ? downloadPath
         : apiUrl(downloadPath);
-      const response = await resilientFetch(resolvedDownloadUrl, {
-        method: 'GET',
-        credentials: 'include',
-        maxRetries: 1,
-      });
+      const response = /^blob:/i.test(resolvedDownloadUrl)
+        ? await fetch(resolvedDownloadUrl)
+        : await resilientFetch(resolvedDownloadUrl, {
+            method: 'GET',
+            credentials: 'include',
+            maxRetries: 1,
+          });
       if (!response.ok) {
         throw new Error(`Download gagal (HTTP ${response.status})`);
       }
