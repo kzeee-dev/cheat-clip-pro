@@ -437,7 +437,8 @@ export default function App() {
 
     setIsLaunchingRender(true);
 
-    const isClientMode = settings.hardwareAccel === 'browser_wasm' || (!isMobileDevice() && (settings.hardwareAccel === 'client_gpu' || settings.renderEngine === 'client' || (sourceMode === 'upload' && Boolean(uploadedVideoFile))));
+    // Merged compilation must run through the backend concat pipeline. The browser renderer processes clips individually and does not implement merged output.
+    const isClientMode = settings.renderMode !== 'merged' && (settings.hardwareAccel === 'browser_wasm' || (!isMobileDevice() && (settings.hardwareAccel === 'client_gpu' || settings.renderEngine === 'client' || (sourceMode === 'upload' && Boolean(uploadedVideoFile)))));
 
     if (isClientMode) {
       try {
