@@ -15,6 +15,7 @@ import {
   Pause
 } from 'lucide-react';
 import { useLanguage } from '../locales';
+import { Capacitor } from '@capacitor/core';
 import { resilientFetch, apiUrl } from '../utils/api';
 import { getStoredCookies, hasStoredCookies } from '../utils/cookieUtils';
 import { detectFaceClientSide } from '../utils/clientFaceDetector';
@@ -360,6 +361,25 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
     event.preventDefault();
 
     try {
+      // Android WebView's DownloadListener forwards clicked URLs to Android
+      // DownloadManager, which only accepts HTTP(S). A blob: URL created by
+      // fetch + URL.createObjectURL is rejected with "Can only download HTTP".
+      if (Capacitor.isNativePlatform()) {
+        const resolvedUrl = new URL(apiUrl(downloadPath), window.location.origin);
+        if (resolvedUrl.protocol !== 'http:' && resolvedUrl.protocol !== 'https:') {
+          throw new Error(`URL download tidak valid untuk Android: ${resolvedUrl.protocol}`);
+        }
+
+        const nativeLink = document.createElement('a');
+        nativeLink.href = resolvedUrl.toString();
+        nativeLink.download = filename.endsWith('.mp4') ? filename : `${filename}.mp4`;
+        nativeLink.style.display = 'none';
+        document.body.appendChild(nativeLink);
+        nativeLink.click();
+        nativeLink.remove();
+        return;
+      }
+
       const response = await resilientFetch(apiUrl(downloadPath), {
         method: 'GET',
         credentials: 'include',
