@@ -16,6 +16,7 @@ import threading
 import queue
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple, Union, Callable
+from types import SimpleNamespace
 from PIL import Image, ImageDraw, ImageFont
 from backend.utils.text import is_twitch_url, extract_twitch_info, get_twitch_canonical_url, canonical_video_url
 
@@ -821,12 +822,89 @@ def transcribe_local_video_file(
     return transcript_lines
 
 
+def _run_ytdlp_with_progress(cmd, timeout, progress_callback=None):
+    """Run yt-dlp while streaming byte, speed, ETA and percentage updates to the UI."""
+    progress_cmd = list(cmd) + [
+        "--newline",
+        "--progress-template",
+        "download:%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+    ]
+    process = subprocess.Popen(
+        progress_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    output_queue = queue.Queue()
+
+    def _reader():
+        try:
+            if process.stdout is not None:
+                for output_line in iter(process.stdout.readline, ""):
+                    output_queue.put(output_line)
+        finally:
+            output_queue.put(None)
+
+    reader = threading.Thread(target=_reader, name="yt-dlp-progress-reader", daemon=True)
+    reader.start()
+    started = time.monotonic()
+    output_lines = []
+    finished = False
+    while not finished:
+        elapsed = time.monotonic() - started
+        if elapsed >= timeout:
+            try:
+                process.terminate()
+                process.wait(timeout=5)
+            except Exception:
+                try:
+                    process.kill()
+                    process.wait(timeout=5)
+                except Exception:
+                    pass
+            raise subprocess.TimeoutExpired(progress_cmd, timeout, output="".join(output_lines))
+        try:
+            line = output_queue.get(timeout=min(0.75, max(0.05, timeout - elapsed)))
+        except queue.Empty:
+            if process.poll() is not None and not reader.is_alive():
+                break
+            continue
+        if line is None:
+            finished = True
+            continue
+        output_lines.append(line)
+        clean = re.sub(r'\\x1b\\[[0-9;]*[a-zA-Z]', '', line.strip())
+        if progress_callback and clean.startswith("download:"):
+            parts = clean[len("download:"):].strip().split("|")
+            if len(parts) >= 5:
+                pct, downloaded, total, speed, eta = [part.strip() for part in parts[:5]]
+                try:
+                    percent = float(re.sub(r"[^0-9.]", "", pct) or 0)
+                except ValueError:
+                    percent = 0.0
+                progress_callback({
+                    "percent": percent,
+                    "downloaded": downloaded if downloaded != "NA" else "",
+                    "total": total if total != "NA" else "",
+                    "speed": speed if speed != "NA" else "",
+                    "eta": eta if eta != "NA" else "",
+                })
+    try:
+        process.wait(timeout=2)
+    except Exception:
+        pass
+    output = "".join(output_lines)
+    return SimpleNamespace(returncode=process.returncode, stdout=output, stderr=output)
+
+
 def download_clip_segment(
     video_url: str,
     start_time: float,
     end_time: float,
     output_filename: str,
-    cookies_content: Optional[str] = None
+    cookies_content: Optional[str] = None,
+    progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None
 ) -> str:
     """
     Downloads or slices the requested time slice in high definition (1080p).
@@ -997,7 +1075,7 @@ def download_clip_segment(
                 clean_url
             ]
             try:
-                res = subprocess.run(cmd, capture_output=True, text=True, timeout=min(timeout_sec, max(1, int(overall_deadline - time.monotonic()))))
+                res = _run_ytdlp_with_progress(cmd, timeout=min(timeout_sec, max(1, int(overall_deadline - time.monotonic()))), progress_callback=progress_callback)
                 if res.returncode == 0 and is_valid_mp4(output_path):
                     logger.info(f"Successfully downloaded section ({mode_label}): {output_path} ({output_path.stat().st_size} bytes)")
                     return str(output_path)
@@ -1120,7 +1198,7 @@ def download_clip_segment(
                     clean_url
                 ]
                 timeout_720p = max(200, min(600, int(clip_duration * 4) + 60))
-                res_720p = subprocess.run(cmd_720p, capture_output=True, text=True, timeout=min(timeout_720p, max(1, int(overall_deadline - time.monotonic()))))
+                res_720p = _run_ytdlp_with_progress(cmd_720p, timeout=min(timeout_720p, max(1, int(overall_deadline - time.monotonic()))), progress_callback=progress_callback)
                 if res_720p.returncode == 0 and is_valid_mp4(output_path):
                     logger.info(f"Successfully downloaded 720p fallback section ({mode_label}): {output_path} ({output_path.stat().st_size} bytes)")
                     return str(output_path)
@@ -1168,7 +1246,7 @@ def download_clip_segment(
                     clean_url
                 ]
                 timeout_480p = max(150, min(450, int(clip_duration * 3) + 45))
-                res_480p = subprocess.run(cmd_480p, capture_output=True, text=True, timeout=min(timeout_480p, max(1, int(overall_deadline - time.monotonic()))))
+                res_480p = _run_ytdlp_with_progress(cmd_480p, timeout=min(timeout_480p, max(1, int(overall_deadline - time.monotonic()))), progress_callback=progress_callback)
                 if res_480p.returncode == 0 and is_valid_mp4(output_path):
                     logger.info(f"Successfully downloaded 480p fallback section ({mode_label}): {output_path} ({output_path.stat().st_size} bytes)")
                     return str(output_path)
