@@ -353,6 +353,47 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
 }) => {
   const { t } = useLanguage();
 
+  const [networkPing, setNetworkPing] = useState<number | null>(null);
+  const [networkPingState, setNetworkPingState] = useState<'checking' | 'good' | 'fair' | 'poor' | 'offline'>('checking');
+
+  useEffect(() => {
+    let active = true;
+    let checking = false;
+
+    const checkNetwork = async () => {
+      if (checking) return;
+      checking = true;
+      const startedAt = performance.now();
+      try {
+        const response = await fetch(apiUrl('/api/system/ping'), {
+          method: 'GET',
+          cache: 'no-store',
+          credentials: 'include',
+          headers: { 'Cache-Control': 'no-cache' },
+        });
+        if (!response.ok) throw new Error(`Ping endpoint returned HTTP ${response.status}`);
+        await response.json();
+        const latency = Math.max(0, Math.round(performance.now() - startedAt));
+        if (!active) return;
+        setNetworkPing(latency);
+        setNetworkPingState(latency < 100 ? 'good' : latency < 250 ? 'fair' : 'poor');
+      } catch {
+        if (!active) return;
+        setNetworkPing(null);
+        setNetworkPingState('offline');
+      } finally {
+        checking = false;
+      }
+    };
+
+    void checkNetwork();
+    const intervalId = window.setInterval(() => void checkNetwork(), 5000);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
   const handleDownloadRenderedClip = async (
     event: React.MouseEvent<HTMLAnchorElement>,
     downloadPath: string,
@@ -2113,6 +2154,36 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
             <p className="studio-subtext">
               {t.studio.subtext}
             </p>
+
+            <div
+              role="status"
+              aria-live="polite"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                marginTop: '0.55rem',
+                padding: '0.35rem 0.6rem',
+                border: `1px solid ${networkPingState === 'good' ? 'rgba(34,197,94,0.45)' : networkPingState === 'fair' ? 'rgba(234,179,8,0.45)' : networkPingState === 'poor' || networkPingState === 'offline' ? 'rgba(239,68,68,0.45)' : 'rgba(148,163,184,0.35)'}`,
+                background: 'rgba(15,23,42,0.45)',
+                color: networkPingState === 'good' ? '#4ade80' : networkPingState === 'fair' ? '#facc15' : networkPingState === 'poor' || networkPingState === 'offline' ? '#f87171' : '#cbd5e1',
+                fontSize: '0.7rem',
+                fontFamily: 'var(--font-mono)',
+                width: 'fit-content',
+              }}
+            >
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'currentColor', boxShadow: '0 0 7px currentColor' }} />
+              <strong>JARINGAN</strong>
+              <span>
+                {networkPingState === 'checking' ? 'Mengecek…' :
+                  networkPingState === 'offline' ? 'Tidak terhubung ke server' :
+                  networkPingState === 'good' ? 'Bagus' :
+                  networkPingState === 'fair' ? 'Sedang' : 'Lambat'}
+              </span>
+              <span style={{ opacity: 0.85 }}>
+                {networkPing !== null ? `${networkPing} ms` : '— ms'}
+              </span>
+            </div>
           </div>
         </div>
 
