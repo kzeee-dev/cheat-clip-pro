@@ -450,8 +450,9 @@ def _get_concat_stream_signature(file_path: str) -> Optional[Tuple[Tuple[str, ..
     """Return codec parameters required for safe concat-demuxer stream copy."""
     probe_cmd = [
         "ffprobe", "-v", "error", "-show_streams",
+        "-show_data_hash", "sha256",
         "-show_entries",
-        "stream=codec_type,codec_name,profile,codec_tag_string,width,height,pix_fmt,level,sample_rate,channels,channel_layout,time_base,avg_frame_rate,r_frame_rate,field_order",
+        "stream=codec_type,codec_name,profile,codec_tag_string,width,height,pix_fmt,level,sample_rate,channels,channel_layout,time_base,avg_frame_rate,r_frame_rate,field_order,extradata_hash",
         "-of", "json", file_path,
     ]
     try:
@@ -474,6 +475,7 @@ def _get_concat_stream_signature(file_path: str) -> Optional[Tuple[Tuple[str, ..
                     "width", "height", "pix_fmt", "level", "sample_rate",
                     "channels", "channel_layout", "time_base",
                     "avg_frame_rate", "r_frame_rate", "field_order",
+                    "extradata_hash",
                 )
             ))
         return tuple(signature) if signature else None
