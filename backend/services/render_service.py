@@ -157,13 +157,23 @@ async def render_single_batch_clip(
         end_t = float(clip.get("end_time", start_t + 30.0))
         seg_filename = f"{batch_id}_clip_{idx}_raw.mp4"
 
+        def _on_download_progress(info: Dict[str, Any]):
+            percent = max(0.0, min(100.0, float(info.get("percent", 0) or 0)))
+            clip_status["download_percent"] = percent
+            clip_status["downloaded"] = info.get("downloaded", "")
+            clip_status["download_total"] = info.get("total", "")
+            clip_status["download_speed"] = info.get("speed", "")
+            clip_status["download_eta"] = info.get("eta", "")
+            clip_status["progress_percent"] = 15 + int(percent * 0.25)
+
         raw_path = await asyncio.to_thread(
             download_clip_segment,
             target_url,
             start_t,
             end_t,
             seg_filename,
-            cookies_content
+            cookies_content,
+            _on_download_progress
         )
 
         if not raw_path or not os.path.exists(raw_path) or not is_valid_mp4(raw_path):
@@ -468,13 +478,23 @@ async def render_merged_batch_clips(
             s_t = float(seg.get("start_time", 0.0))
             e_t = float(seg.get("end_time", s_t + 30.0))
             part_filename = f"{batch_id}_part_{i}_raw.mp4"
+            def _on_merged_download_progress(info: Dict[str, Any]):
+                percent = max(0.0, min(100.0, float(info.get("percent", 0) or 0)))
+                clip_status["download_percent"] = percent
+                clip_status["downloaded"] = info.get("downloaded", "")
+                clip_status["download_total"] = info.get("total", "")
+                clip_status["download_speed"] = info.get("speed", "")
+                clip_status["download_eta"] = info.get("eta", "")
+                clip_status["progress_percent"] = 10 + int(((i + percent / 100.0) / max(1, total_segments)) * 25)
+
             p_path = await asyncio.to_thread(
                 download_clip_segment,
                 target_url,
                 s_t,
                 e_t,
                 part_filename,
-                cookies_content
+                cookies_content,
+                _on_merged_download_progress
             )
             if not p_path or not os.path.exists(p_path) or not is_valid_mp4(p_path):
                 raise RuntimeError(
