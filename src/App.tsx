@@ -538,7 +538,10 @@ export default function App() {
                   });
                   if (statusData.status === 'ready' && statusData.download_url) {
                     clearInterval(pollInterval);
-                    resolve(statusData.download_url);
+                    // The raw-clip endpoint returns an API-relative path.
+                    // Resolve it against the actual API request URL so the client
+                    // renderer receives an absolute HTTP(S) URL, not capacitor://localhost.
+                    resolve(new URL(statusData.download_url, rawReq.url).toString());
                   } else if (statusData.status === 'failed') {
                     clearInterval(pollInterval);
                     reject(new Error(statusData.error || 'Failed to acquire raw clip segment'));
