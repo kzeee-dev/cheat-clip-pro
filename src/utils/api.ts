@@ -14,7 +14,7 @@ import { Capacitor } from '@capacitor/core';
 // In the installed Android app, relative /api requests target the WebView origin,
 // not the Python server running in Termux. Use the device loopback explicitly.
 const DEFAULT_NATIVE_API_BASE_URL = Capacitor.isNativePlatform()
-  ? 'http://127.0.0.1:8000'
+  ? 'http://localhost:8000'
   : '';
 
 const API_BASE_URL = (
