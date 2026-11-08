@@ -351,6 +351,42 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
   transcript = [],
 }) => {
   const { t } = useLanguage();
+
+  const handleDownloadRenderedClip = async (
+    event: React.MouseEvent<HTMLAnchorElement>,
+    downloadPath: string,
+    filename: string
+  ) => {
+    event.preventDefault();
+
+    try {
+      const response = await resilientFetch(apiUrl(downloadPath), {
+        method: 'GET',
+        credentials: 'include',
+        maxRetries: 1,
+      });
+      if (!response.ok) {
+        throw new Error(`Download gagal (HTTP ${response.status})`);
+      }
+
+      const blob = await response.blob();
+      if (!blob.size) throw new Error('File MP4 kosong.');
+
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = filename.endsWith('.mp4') ? filename : `${filename}.mp4`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 5000);
+    } catch (error) {
+      console.error('Rendered clip download failed:', error);
+      window.alert(
+        error instanceof Error ? error.message : 'Gagal mengunduh MP4. Coba gunakan download ZIP.'
+      );
+    }
+  };
   const isYouTube = !videoId?.startsWith('upload_') && !videoId?.startsWith('gdrive_') && !videoId?.startsWith('twitch_') && !videoUrl?.includes('/api/video') && !videoUrl?.includes('twitch.tv');
   const isTwitch = Boolean(videoId?.startsWith('twitch_') || videoUrl?.includes('twitch.tv'));
   const [hasCookies, setHasCookies] = useState<boolean>(() => hasStoredCookies());
@@ -5360,6 +5396,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                           {c.download_url && (
                             <a
                               href={dlUrlWithTitle}
+                              onClick={(event) => handleDownloadRenderedClip(event, dlUrlWithTitle, `${finalClipName}.mp4`)}
                               download={`${finalClipName}.mp4`}
                               className="quick-dl-btn"
                               title={`Download ${finalClipName}.mp4`}
