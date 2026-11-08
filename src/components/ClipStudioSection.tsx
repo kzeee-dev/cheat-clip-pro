@@ -365,7 +365,39 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
       // DownloadManager, which only accepts HTTP(S). A blob: URL created by
       // fetch + URL.createObjectURL is rejected with "Can only download HTTP".
       if (Capacitor.isNativePlatform()) {
-        const resolvedUrl = new URL(apiUrl(downloadPath), window.location.origin);
+        let nativeDownloadPath = downloadPath;
+
+        // Client-side WebCodecs renders are held in a WebView blob URL.
+        // Android DownloadManager cannot read blob: URLs, so stream the blob
+        // to the Termux backend first and then download its HTTP(S) file URL.
+        if (/^blob:/i.test(nativeDownloadPath)) {
+          const blobUrl = nativeDownloadPath.split('?title=')[0];
+          const blobResponse = await fetch(blobUrl);
+          if (!blobResponse.ok) {
+            throw new Error(`Gagal membaca hasil render (HTTP ${blobResponse.status})`);
+          }
+          const renderedBlob = await blobResponse.blob();
+          if (!renderedBlob.size) throw new Error('File MP4 hasil render kosong.');
+
+          const formData = new FormData();
+          const safeFilename = filename.endsWith('.mp4') ? filename : `${filename}.mp4`;
+          formData.append('file', renderedBlob, safeFilename);
+          formData.append('title', safeFilename.replace(/\.mp4$/i, ''));
+
+          const saveResponse = await resilientFetch(apiUrl('/api/save-rendered-clip'), {
+            method: 'POST',
+            body: formData,
+            credentials: 'include',
+            maxRetries: 0,
+          });
+          const saveData = await saveResponse.json().catch(() => ({}));
+          if (!saveResponse.ok || !saveData.download_url) {
+            throw new Error(saveData.detail || `Gagal menyiapkan file download (HTTP ${saveResponse.status})`);
+          }
+          nativeDownloadPath = saveData.download_url;
+        }
+
+        const resolvedUrl = new URL(apiUrl(nativeDownloadPath), window.location.origin);
         if (resolvedUrl.protocol !== 'http:' && resolvedUrl.protocol !== 'https:') {
           throw new Error(`URL download tidak valid untuk Android: ${resolvedUrl.protocol}`);
         }
@@ -5414,7 +5446,9 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                       }
                       const finalClipName = dupCount > 0 ? `${cleanTitle} (${dupCount})` : cleanTitle;
                       const dlUrlWithTitle = c.download_url
-                        ? `${c.download_url}${c.download_url.includes('?') ? '&' : '?'}title=${encodeURIComponent(finalClipName)}`
+                        ? (/^blob:/i.test(c.download_url)
+                            ? c.download_url
+                            : `${c.download_url}${c.download_url.includes('?') ? '&' : '?'}title=${encodeURIComponent(finalClipName)}`)
                         : '';
 
                       return (
@@ -5750,7 +5784,9 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
               }
               const finalClipName = dupCount > 0 ? `${cleanTitle} (${dupCount})` : cleanTitle;
               const dlUrlWithTitle = clip.download_url
-                ? `${clip.download_url}${clip.download_url.includes('?') ? '&' : '?'}title=${encodeURIComponent(finalClipName)}`
+                ? (/^blob:/i.test(clip.download_url)
+                    ? clip.download_url
+                    : `${clip.download_url}${clip.download_url.includes('?') ? '&' : '?'}title=${encodeURIComponent(finalClipName)}`)
                 : '';
 
               const isError = clip.status === 'error';
