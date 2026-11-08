@@ -499,10 +499,10 @@ def _try_concat_segments_stream_copy(
             prefix="concat_", dir=str(TEMP_DIR), delete=False
         ) as list_file:
             list_path = list_file.name
-            list_file.write("ffconcat version 1.0\\n")
+            list_file.write("ffconcat version 1.0\n")
             for part_path in part_paths:
-                escaped_path = os.path.abspath(part_path).replace("\\\\", "\\\\\\\\").replace("'", "\\\\'")
-                list_file.write(f"file '{escaped_path}'\\n")
+                escaped_path = os.path.abspath(part_path).replace("\\", "\\\\").replace("'", "\\'")
+                list_file.write(f"file '{escaped_path}'\n")
 
         command = [
             "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
