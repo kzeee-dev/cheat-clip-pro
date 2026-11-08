@@ -367,15 +367,26 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
       const controller = new AbortController();
       const timeoutId = window.setTimeout(() => controller.abort(), 3500);
       try {
-        const response = await fetch(apiUrl('/api/system/ping'), {
+        const requestOptions: RequestInit = {
           method: 'GET',
           cache: 'no-store',
           credentials: 'include',
           headers: { 'Cache-Control': 'no-cache' },
           signal: controller.signal,
-        });
-        if (!response.ok) throw new Error(`Ping endpoint returned HTTP ${response.status}`);
-        await response.json();
+        };
+
+        // Older Termux backends may not have /api/system/ping yet. Fall back
+        // to the long-standing system/version endpoint so the monitor reflects
+        // actual API reachability instead of incorrectly reporting "offline".
+        let response = await fetch(apiUrl('/api/system/ping'), requestOptions);
+        if (!response.ok && (response.status === 404 || response.status === 405)) {
+          response = await fetch(apiUrl('/api/system/version'), requestOptions);
+        }
+        if (!response.ok) throw new Error(`Backend health check returned HTTP ${response.status}`);
+        const payload = await response.json();
+        if (!payload || typeof payload !== 'object') {
+          throw new Error('Backend health check returned an invalid response');
+        }
         const latency = Math.max(0, Math.round(performance.now() - startedAt));
         if (!active) return;
         setNetworkPing(latency);
