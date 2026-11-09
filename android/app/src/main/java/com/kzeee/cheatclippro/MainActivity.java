@@ -50,7 +50,7 @@ public class MainActivity extends BridgeActivity {
             this,
             downloadReceiver,
             filter,
-            ContextCompat.RECEIVER_NOT_EXPORTED
+            ContextCompat.RECEIVER_EXPORTED
         );
         receiverRegistered = true;
 
