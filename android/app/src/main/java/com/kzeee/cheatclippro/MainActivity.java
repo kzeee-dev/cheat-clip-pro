@@ -110,7 +110,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
-    protected void onResume() {
+    public void onResume() {
         super.onResume();
         long lastId = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
             .getLong(KEY_LAST_DOWNLOAD_ID, -1L);
@@ -206,7 +206,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
-    protected void onDestroy() {
+    public void onDestroy() {
         if (receiverRegistered) {
             unregisterReceiver(downloadReceiver);
             receiverRegistered = false;
