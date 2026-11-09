@@ -20,7 +20,7 @@ Fitur yang tersedia dapat berubah mengikuti versi aplikasi.
 ### 1. Pasang APK
 
 1. Buka halaman [GitHub Actions](https://github.com/kzeee-dev/cheat-clip-pro/actions).
-2. Pilih workflow **Android debug APK** dan buka run dengan status **Success**.
+2. Pilih workflow **Build Android APK** dan buka run dengan status **Success**.
 3. Di bagian **Artifacts**, unduh `cheat-clip-pro-debug-apk`.
 4. Ekstrak file ZIP artifact.
 5. Buka `app-debug.apk` di Android dan ikuti proses instalasi. Jika diminta, izinkan instalasi aplikasi dari sumber tersebut.
@@ -36,7 +36,7 @@ APK memerlukan backend yang berjalan di perangkat yang sama pada port **8000**. 
 
 ```bash
 pkg update && pkg upgrade -y
-pkg install git nodejs-lts proot-distro ffmpeg -y
+pkg install git nodejs-lts proot-distro ffmpeg curl -y
 proot-distro install ubuntu
 ```
 
@@ -57,15 +57,23 @@ git clone https://github.com/kzeee-dev/cheat-clip-pro.git
 cd cheat-clip-pro
 ```
 
-5. Jalankan backend:
+5. Jalankan backend dari folder proyek:
 
 ```bash
 bash start.sh
 ```
 
-Skrip akan menjalankan backend melalui Ubuntu. Pada penggunaan pertama, dependency Python yang belum tersedia dapat di-install otomatis. Proses ini bisa memerlukan waktu dan ruang penyimpanan yang cukup.
+Tunggu sampai terminal menampilkan bahwa server berjalan di port `8000`. Pada penggunaan pertama, skrip akan memeriksa Python dan memasang dependency dari `backend/requirements.txt` bila belum tersedia. Paket AI seperti PyTorch dan Whisper berukuran besar; instalasi pertama dapat memakan waktu lama, data internet, dan ruang penyimpanan yang cukup. Jangan tutup Termux selama proses berjalan.
 
-6. Biarkan Termux/backend tetap berjalan. Buka aplikasi **Cheat Clip Pro**. APK Android menggunakan alamat backend lokal `http://localhost:8000`.
+Jika muncul pesan `node: command not found` saat skrip masuk ke Ubuntu, jalankan alternatif berikut dari Termux (bukan dari prompt Ubuntu):
+
+```bash
+proot-distro login ubuntu -- bash -lc 'export PATH="/data/data/com.termux/files/usr/bin:$PATH"; cd /data/data/com.termux/files/home/cheat-clip-pro; node scripts/start-backend.js'
+```
+
+6. Setelah server aktif, biarkan sesi Termux tetap terbuka dan pindah ke aplikasi **Cheat Clip Pro**. APK Android pada konfigurasi ini menghubungkan diri ke backend lokal `http://localhost:8000`.
+
+7. Untuk menghentikan backend, kembali ke sesi Termux yang menjalankannya lalu tekan `CTRL + C`. Untuk penggunaan berikutnya, buka Termux, masuk ke folder proyek (`cd ~/cheat-clip-pro`), lalu jalankan `bash start.sh` lagi.
 
 **Jika muncul `node: command not found` di Ubuntu**, jalankan backend dengan path Node.js Termux:
 
