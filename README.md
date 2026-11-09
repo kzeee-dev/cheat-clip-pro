@@ -57,7 +57,13 @@ git clone https://github.com/kzeee-dev/cheat-clip-pro.git
 cd cheat-clip-pro
 ```
 
-5. Jalankan backend dari folder proyek:
+5. Buat virtual environment Python dan pasang dependency backend. Jalankan dari Termux:
+
+```bash
+proot-distro login ubuntu -- bash -lc 'cd /data/data/com.termux/files/home/cheat-clip-pro && python3 -m venv .venv && .venv/bin/python -m pip install --upgrade pip && .venv/bin/python -m pip install -r backend/requirements.txt'
+```
+
+Instalasi dependency AI/video bisa besar dan lama. Jika perintah selesai tanpa error, jalankan backend dari Termux:
 
 ```bash
 bash start.sh
