@@ -6,6 +6,7 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi.responses import JSONResponse
 
 from backend.config import EXPORTS_DIR, logger
 from backend.schemas.downloads import RawClipDownloadRequest, RawVideoDownloadRequest
@@ -61,7 +62,7 @@ async def get_raw_download_status(job_id: str):
     job = raw_download_jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Download job not found")
-    return job
+    return JSONResponse(content=job, headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache"})
 
 
 @router.post("/api/download-raw-clip")
@@ -84,6 +85,11 @@ async def handle_download_raw_clip(req: RawClipDownloadRequest, background_tasks
         "job_id": job_id,
         "status": "starting",
         "progress_percent": 0.0,
+        "download_percent": 0.0,
+        "downloaded": "",
+        "total": "",
+        "speed": "",
+        "eta": "",
         "title": download_title,
         "download_url": None,
         "filename": f"{download_title}.mp4",
@@ -108,4 +114,4 @@ async def get_raw_clip_download_status(job_id: str):
     job = raw_clip_download_jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Clip download job not found")
-    return job
+    return JSONResponse(content=job, headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache"})

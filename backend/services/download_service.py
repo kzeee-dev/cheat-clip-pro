@@ -17,6 +17,7 @@ from backend.config import (
     TEMP_DIR,
     UPLOADS_DIR,
     download_clip_segment,
+    _run_ffmpeg_with_progress,
     download_full_raw_video,
     is_valid_mp4,
     logger,
@@ -66,7 +67,20 @@ async def run_raw_download_job(
 
         if local_src and os.path.exists(local_src):
             logger.info(f"Serving local/gdrive video {local_src} directly as full download {out_path}")
+            if not is_valid_mp4(local_src):
+                raise RuntimeError(
+                    f"Local source video is invalid or incomplete: {os.path.basename(local_src)}. "
+                    "Please re-upload or re-analyze the source video."
+                )
             shutil.copy2(local_src, out_path)
+            if not is_valid_mp4(out_path):
+                try:
+                    os.unlink(out_path)
+                except OSError:
+                    pass
+                raise RuntimeError(
+                    "Copied local video failed MP4 validation. Please retry or re-upload the source."
+                )
             raw_download_jobs[job_id]["status"] = "ready"
             raw_download_jobs[job_id]["progress_percent"] = 100.0
             dl_name = download_title or filename
@@ -104,9 +118,21 @@ async def run_raw_clip_download_job(
     seg_filename = f"{safe_id}_clip_{int(start_time)}_{int(end_time)}_{int(time.time())}_raw.mp4"
     out_path = EXPORTS_DIR / seg_filename
 
+    def on_progress(info: dict):
+        job = raw_clip_download_jobs.get(job_id)
+        if not job:
+            return
+        job["status"] = "downloading"
+        job["download_percent"] = max(0.0, min(100.0, float(info.get("percent", 0) or 0)))
+        job["downloaded"] = info.get("downloaded", "")
+        job["total"] = info.get("total", "")
+        job["speed"] = info.get("speed", "")
+        job["eta"] = info.get("eta", "")
+
     try:
         raw_clip_download_jobs[job_id]["status"] = "downloading"
-        raw_clip_download_jobs[job_id]["progress_percent"] = 25.0
+        raw_clip_download_jobs[job_id]["progress_percent"] = 0.0
+        raw_clip_download_jobs[job_id]["download_percent"] = 0.0
 
         # Optimization: Check if a full raw video already exists locally in UPLOADS_DIR, EXPORTS_DIR or TEMP_DIR
         local_candidates = []
@@ -152,6 +178,22 @@ async def run_raw_clip_download_job(
 
         duration_sec = max(1.0, end_time - start_time)
 
+        def on_local_trim_progress(info: dict):
+            job = raw_clip_download_jobs.get(job_id)
+            if not job:
+                return
+            try:
+                current_size = out_path.stat().st_size if out_path.exists() else 0
+                downloaded_label = f"{current_size / (1024 * 1024):.1f} MB"
+            except OSError:
+                downloaded_label = ""
+            job["status"] = "downloading"
+            job["download_percent"] = max(0.0, min(100.0, float(info.get("percent", 0) or 0)))
+            job["downloaded"] = downloaded_label
+            job["total"] = "source lokal"
+            job["speed"] = f"{info.get('speed', '0x')} proses FFmpeg"
+            job["eta"] = ""
+
         success = False
         if source_video and os.path.exists(source_video):
             try:
@@ -169,7 +211,17 @@ async def run_raw_clip_download_job(
                     str(out_path)
                 ]
                 trim_timeout = max(180, int(duration_sec * 4) + 60)
-                await asyncio.to_thread(subprocess.run, trim_cmd, check=True, timeout=trim_timeout)
+                trim_result = await asyncio.to_thread(
+                    _run_ffmpeg_with_progress,
+                    trim_cmd,
+                    trim_timeout,
+                    on_local_trim_progress,
+                    duration_sec
+                )
+                if trim_result.returncode != 0:
+                    raise subprocess.CalledProcessError(
+                        trim_result.returncode, trim_cmd, stderr=trim_result.stderr
+                    )
                 if out_path.exists() and out_path.stat().st_size > 1000:
                     success = True
             except Exception as trim_err:
@@ -189,7 +241,17 @@ async def run_raw_clip_download_job(
                         "-movflags", "+faststart",
                         str(out_path)
                     ]
-                    await asyncio.to_thread(subprocess.run, cpu_trim_cmd, check=True, timeout=trim_timeout)
+                    trim_result = await asyncio.to_thread(
+                        _run_ffmpeg_with_progress,
+                        cpu_trim_cmd,
+                        trim_timeout,
+                        on_local_trim_progress,
+                        duration_sec
+                    )
+                    if trim_result.returncode != 0:
+                        raise subprocess.CalledProcessError(
+                            trim_result.returncode, cpu_trim_cmd, stderr=trim_result.stderr
+                        )
                     if out_path.exists() and out_path.stat().st_size > 1000:
                         success = True
                 except Exception as cpu_err:
@@ -204,7 +266,8 @@ async def run_raw_clip_download_job(
                 start_time,
                 end_time,
                 temp_name,
-                cookies_content
+                cookies_content,
+                on_progress
             )
             if downloaded_temp and os.path.exists(downloaded_temp):
                 if out_path.exists():
@@ -237,6 +300,7 @@ async def run_raw_clip_download_job(
         if success and out_path.exists() and is_valid_mp4(out_path):
             raw_clip_download_jobs[job_id]["status"] = "ready"
             raw_clip_download_jobs[job_id]["progress_percent"] = 100.0
+            raw_clip_download_jobs[job_id]["download_percent"] = 100.0
             raw_clip_download_jobs[job_id]["download_url"] = f"/api/download-rendered/{seg_filename}?title={quote(download_title)}"
             raw_clip_download_jobs[job_id]["filename"] = f"{download_title}.mp4"
             logger.info(f"Raw clip '{download_title}' ready at {out_path}")

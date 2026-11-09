@@ -55,6 +55,99 @@ declare global {
   }
 }
 
+function GlobalNetworkMonitor() {
+  const [backendPing, setBackendPing] = useState<number | null>(null);
+  const [backendState, setBackendState] = useState<'checking' | 'good' | 'fair' | 'poor' | 'offline'>('checking');
+  const [internetPing, setInternetPing] = useState<number | null>(null);
+  const [internetState, setInternetState] = useState<'checking' | 'online' | 'degraded' | 'offline'>('checking');
+  const [monitorError, setMonitorError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    let checking = false;
+    const check = async () => {
+      if (checking) return;
+      checking = true;
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 15000);
+      const startedAt = performance.now();
+      try {
+        const response = await fetch(apiUrl('/api/system/ping'), {
+          method: 'GET',
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`Health check returned HTTP ${response.status}`);
+        const latency = Math.round(performance.now() - startedAt);
+        const data = await response.json().catch(() => null);
+        if (!active) return;
+        setMonitorError(null);
+        setBackendPing(latency);
+        setBackendState(latency < 100 ? 'good' : latency < 250 ? 'fair' : 'poor');
+        if (data && typeof data.internet_status === 'string') {
+          setInternetState(data.internet_status === 'online' || data.internet_status === 'degraded' ? data.internet_status : 'offline');
+          setInternetPing(typeof data.internet_latency_ms === 'number' ? data.internet_latency_ms : null);
+        } else {
+          setInternetState('checking');
+          setInternetPing(null);
+        }
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        console.warn('[GlobalNetworkMonitor] Health check failed', {
+          url: apiUrl('/api/system/ping'),
+          origin: window.location.origin,
+          error: detail,
+        });
+        if (active) {
+          setMonitorError(detail);
+          setBackendState('offline');
+          setInternetState('offline');
+          setBackendPing(null);
+          setInternetPing(null);
+        }
+      } finally {
+        window.clearTimeout(timeoutId);
+        checking = false;
+      }
+    };
+    void check();
+    const intervalId = window.setInterval(() => void check(), 5000);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  const backendColor = backendState === 'good' ? '#4ade80' : backendState === 'fair' ? '#facc15' : backendState === 'poor' || backendState === 'offline' ? '#f87171' : '#cbd5e1';
+  const internetColor = internetState === 'online' ? '#4ade80' : internetState === 'degraded' ? '#facc15' : internetState === 'offline' ? '#f87171' : '#cbd5e1';
+  return (
+    <div role="status" aria-live="polite" aria-label="Status jaringan global" style={{
+      position: 'fixed', right: '10px', bottom: 'calc(env(safe-area-inset-bottom, 0px) + 10px)',
+      zIndex: 1200, display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '6px',
+      maxWidth: 'calc(100vw - 20px)', pointerEvents: 'none',
+    }}>
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 9px',
+        border: `1px solid ${backendColor}66`, background: 'rgba(8, 12, 20, 0.94)', color: backendColor,
+        boxShadow: '0 3px 14px rgba(0,0,0,0.35)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)', backdropFilter: 'blur(8px)' }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor', boxShadow: '0 0 7px currentColor' }} />
+        <strong>JARINGAN</strong>
+        <span>{backendState === 'checking' ? 'Mengecek' : backendState === 'offline' ? 'Server putus' : backendState === 'good' ? 'Bagus' : backendState === 'fair' ? 'Sedang' : 'Lambat'}</span>
+        <span>{backendPing === null ? '—' : `${backendPing} ms`}</span>
+      </div>
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 9px',
+        border: `1px solid ${internetColor}66`, background: 'rgba(8, 12, 20, 0.94)', color: internetColor,
+        boxShadow: '0 3px 14px rgba(0,0,0,0.35)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)', backdropFilter: 'blur(8px)' }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor', boxShadow: '0 0 7px currentColor' }} />
+        <strong>INTERNET</strong>
+        <span>{internetState === 'checking' ? 'Belum terukur' : internetState === 'online' ? 'Stabil' : internetState === 'degraded' ? 'Terbatas' : 'Offline'}</span>
+        <span>{internetPing === null ? '—' : `${internetPing} ms`}</span>
+      </div>
+      <div style={{ width: '100%', textAlign: 'right', color: '#cbd5e1', fontSize: '0.55rem', fontFamily: 'var(--font-mono)' }}>API: {apiUrl('/api/system/ping')} · {window.location.origin}</div>
+      {monitorError && <div title={monitorError} style={{ width: '100%', textAlign: 'right', color: '#fca5a5', fontSize: '0.6rem', fontFamily: 'var(--font-mono)' }}>DEBUG: {monitorError.slice(0, 110)}</div>}
+    </div>
+  );
+}
+
 export default function App() {
   const { t } = useLanguage();
   const [appZoom, setAppZoom] = useState<number>(() => {
@@ -437,7 +530,8 @@ export default function App() {
 
     setIsLaunchingRender(true);
 
-    const isClientMode = settings.hardwareAccel === 'browser_wasm' || (!isMobileDevice() && (settings.hardwareAccel === 'client_gpu' || settings.renderEngine === 'client' || (sourceMode === 'upload' && Boolean(uploadedVideoFile))));
+    // Merged compilation must run through the backend concat pipeline. The browser renderer processes clips individually and does not implement merged output.
+    const isClientMode = settings.renderMode !== 'merged' && (settings.hardwareAccel === 'browser_wasm' || (!isMobileDevice() && (settings.hardwareAccel === 'client_gpu' || settings.renderEngine === 'client' || (sourceMode === 'upload' && Boolean(uploadedVideoFile)))));
 
     if (isClientMode) {
       try {
@@ -514,16 +608,34 @@ export default function App() {
             rawSourceUrl = await new Promise<string>((resolve, reject) => {
               const pollInterval = setInterval(async () => {
                 try {
-                  const statusRes = await fetch(apiUrl(`/api/download-raw-clip-status/${jobId}`));
+                  const statusRes = await fetch(apiUrl(`/api/download-raw-clip-status/${jobId}`), { method: 'GET', cache: 'no-store', credentials: 'include', headers: { 'Cache-Control': 'no-cache' } });
                   if (!statusRes.ok) {
                     clearInterval(pollInterval);
                     reject(new Error('Failed to retrieve raw stream status'));
                     return;
                   }
                   const statusData = await statusRes.json();
+                  setBatchProgress(prev => {
+                    if (!prev) return prev;
+                    return {
+                      ...prev,
+                      clips: prev.clips.map((c, idx) => idx === i ? {
+                        ...c,
+                        status: 'downloading',
+                        download_percent: Number(statusData.download_percent ?? statusData.progress_percent ?? 0),
+                        downloaded: statusData.downloaded || '',
+                        download_total: statusData.total || '',
+                        download_speed: statusData.speed || '',
+                        download_eta: statusData.eta || '',
+                      } : c)
+                    };
+                  });
                   if (statusData.status === 'ready' && statusData.download_url) {
                     clearInterval(pollInterval);
-                    resolve(statusData.download_url);
+                    // The raw-clip endpoint returns an API-relative path.
+                    // Resolve it against the actual API request URL so the client
+                    // renderer receives an absolute HTTP(S) URL, not capacitor://localhost.
+                    resolve(new URL(statusData.download_url, rawReq.url).toString());
                   } else if (statusData.status === 'failed') {
                     clearInterval(pollInterval);
                     reject(new Error(statusData.error || 'Failed to acquire raw clip segment'));
@@ -532,7 +644,7 @@ export default function App() {
                   clearInterval(pollInterval);
                   reject(e);
                 }
-              }, 600);
+              }, 250);
             });
           }
 
@@ -778,7 +890,24 @@ export default function App() {
     if (!batchProgress?.batch_id) return;
     const batchId = batchProgress.batch_id;
     try {
-      // Optimistically update the UI to show 'pending' / retrying state for selected clip(s)
+      const userCookies = getStoredCookies();
+      const resp = await fetch(apiUrl(`/api/render-batch/${batchId}/retry`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clip_indices: clipIndex !== undefined ? [clipIndex] : undefined,
+          cookies: userCookies || undefined,
+        }),
+      });
+
+      if (!resp.ok) {
+        const errJson = await resp.json().catch(() => ({}));
+        throw new Error(errJson.detail || 'Failed to retry rendering');
+      }
+
+      // Update the UI only after the backend accepted the retry.
+      // A rejected request (e.g. HTTP 409 while the batch is already running)
+      // must leave the existing progress state untouched.
       setBatchProgress(prev => {
         if (!prev) return prev;
         return {
@@ -794,21 +923,6 @@ export default function App() {
           })
         };
       });
-
-      const userCookies = getStoredCookies();
-      const resp = await fetch(apiUrl(`/api/render-batch/${batchId}/retry`), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clip_indices: clipIndex !== undefined ? [clipIndex] : undefined,
-          cookies: userCookies || undefined,
-        }),
-      });
-
-      if (!resp.ok) {
-        const errJson = await resp.json().catch(() => ({}));
-        throw new Error(errJson.detail || 'Failed to retry rendering');
-      }
 
       // Reconnect SSE to track retry progress
       listenToBatchProgress(batchId);
@@ -2269,7 +2383,7 @@ export default function App() {
       await new Promise<void>((resolve, reject) => {
         const intervalId = setInterval(async () => {
           try {
-            const statusRes = await fetch(apiUrl(`/api/download-raw-status/${jobId}`));
+            const statusRes = await fetch(apiUrl(`/api/download-raw-status/${jobId}`), { method: 'GET', cache: 'no-store', credentials: 'include', headers: { 'Cache-Control': 'no-cache' } });
             if (!statusRes.ok) {
               clearInterval(intervalId);
               reject(new Error(t.rawDownload.failedToast));
@@ -2456,7 +2570,7 @@ export default function App() {
       await new Promise<void>((resolve, reject) => {
         const intervalId = setInterval(async () => {
           try {
-            const statusRes = await fetch(apiUrl(`/api/download-raw-clip-status/${jobId}`));
+            const statusRes = await fetch(apiUrl(`/api/download-raw-clip-status/${jobId}`), { method: 'GET', cache: 'no-store', credentials: 'include', headers: { 'Cache-Control': 'no-cache' } });
             if (!statusRes.ok) {
               clearInterval(intervalId);
               reject(new Error("Failed to get clip download status"));
@@ -2888,6 +3002,7 @@ Transcript:
         </div>
       )}
 
+      <GlobalNetworkMonitor />
       <div className="app-zoom-wrapper" style={{ zoom: appZoom / 100 }}>
       {/* Full-Width Cyber Header Bar (johansa.com style - Edge-to-Edge Solid Dark) */}
       <div className="app-header-wrapper">

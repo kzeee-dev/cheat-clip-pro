@@ -2,6 +2,7 @@ import React from 'react';
 import { RefreshCw, AlertTriangle } from 'lucide-react';
 import { useLanguage } from '../locales';
 import type { BatchRenderProgress } from '../types';
+import { apiUrl } from '../utils/api';
 import styles from './BatchRenderProgressModal.module.css';
 
 interface BatchRenderProgressModalProps {
@@ -72,7 +73,17 @@ export const BatchRenderProgressModal: React.FC<BatchRenderProgressModalProps> =
               <div className={styles.itemStatusWrap}>
                 {clip.status === 'pending' && <span className={`${styles.statusBadge} ${styles.badgePending}`}>{t.batchProgress.statusWaiting}</span>}
                 {clip.status === 'downloading' && (
-                  <span className={`${styles.statusBadge} ${styles.badgeActive}`}>{t.batchProgress.statusSlicing}</span>
+                  <div className={styles.downloadProgressWrap}>
+                    <span className={`${styles.statusBadge} ${styles.badgeActive}`}>{clip.download_phase === 'stream_trim' ? 'Memotong stream' : t.batchProgress.statusSlicing}</span>
+                    <div className={styles.downloadProgressTrack}>
+                      <div className={styles.downloadProgressFill} style={{ width: `${Math.max(0, Math.min(100, clip.download_percent ?? 0))}%` }} />
+                    </div>
+                    <div className={styles.downloadProgressMeta}>
+                      <span>{clip.downloaded || 'Menyiapkan download'}{clip.download_total ? ` / ${clip.download_total}` : ' / ukuran total belum diketahui'}</span>
+                      <span>{clip.download_speed || ''}</span>
+                    </div>
+                    {clip.download_eta && <div className={styles.downloadEta}>Sisa waktu: {clip.download_eta}</div>}
+                  </div>
                 )}
                 {clip.status === 'transcribing' && (
                   <span className={`${styles.statusBadge} ${styles.badgeActive}`}>{t.batchProgress.statusCaptions}</span>
@@ -85,8 +96,7 @@ export const BatchRenderProgressModal: React.FC<BatchRenderProgressModalProps> =
                     <span className={`${styles.statusBadge} ${styles.badgeSuccess}`}>{t.batchProgress.statusDone}</span>
                     {clip.download_url && (
                       <a
-                        href={clip.download_url}
-                        download
+                        href={apiUrl(clip.download_url)}
                         className={styles.btnDownloadClip}
                         title={t.batchProgress.downloadMp4Tooltip}
                       >

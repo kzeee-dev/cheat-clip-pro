@@ -1,177 +1,172 @@
-# 🎬 Cheat Clip PRO
+# Cheat Clip Pro
 
-> **AI Powered Auto Clipper — Turn long YouTube, Google Drive, and uploaded videos into viral TikToks, Shorts, and Reels with animated subtitles, face centering, and music in minutes.**
+**Cheat Clip Pro** adalah aplikasi untuk membantu mengambil bagian video, menyusun klip pendek, melakukan render, menambahkan subtitle, melihat pratinjau, dan mengunduh hasil render maupun paket ZIP.
 
----
+> **Catatan penting:** APK Android adalah antarmuka aplikasi. Proses analisis, download sumber, dan render dijalankan oleh backend Python yang harus aktif di perangkat/server. Pada konfigurasi Android saat ini, APK terhubung ke backend lokal di `http://localhost:8000`.
 
-## ⚡ Quick Start & Setup
+## Fitur
 
-Follow these steps to set up and run Cheat Clip PRO locally on **Windows**, **macOS**, or **Linux**.
+- Analisis video dan pemilihan segmen klip.
+- Pengunduhan video/segmen menggunakan backend.
+- Pengaturan klip dan proses batch render.
+- Subtitle dan pengaturan tampilan video.
+- Pratinjau hasil render.
+- Unduh video hasil render dan paket ZIP.
 
-### Step 1: Prerequisites
+Fitur yang tersedia dapat berubah mengikuti versi aplikasi.
 
-Make sure you have the following installed:
+## Instalasi Android
 
-1. **[Git](https://git-scm.com/)**
-   * **Windows:** `winget install Git.Git` or download from [git-scm.com](https://git-scm.com/)
-   * **macOS:** `brew install git`
-   * **Linux:** `sudo apt install git`
-2. **[Node.js](https://nodejs.org/)** (v18 or newer)
-   * Download from [nodejs.org](https://nodejs.org/) or install via your package manager.
-3. **[Python](https://www.python.org/)** (v3.10 or newer)
-   * **Windows:** Install from [python.org](https://www.python.org/downloads/) (make sure to check *"Add Python to PATH"* during setup) or from Microsoft Store.
-   * **macOS:** `brew install python`
-   * **Linux:** `sudo apt install python3 python3-pip python3-venv`
-4. **FFmpeg & yt-dlp** (Required to download, slice, and render clips)
-   * **Windows (PowerShell):**
-     ```powershell
-     winget install Gyan.FFmpeg
-     winget install yt-dlp.yt-dlp
-     ```
-     *(Close and reopen your terminal after installing so Windows recognizes them)*
-   * **macOS (Terminal):**
-     ```bash
-     brew install ffmpeg-full yt-dlp
-     ```
-      `ffmpeg-full` is required for the libass subtitle filter used by rendered captions.
-   * **Linux:**
-     ```bash
-     sudo apt update && sudo apt install ffmpeg
-     pip install yt-dlp
-     ```
+### 1. Pasang APK
 
----
+1. Buka halaman [GitHub Actions](https://github.com/kzeee-dev/cheat-clip-pro/actions).
+2. Pilih workflow **Android debug APK** dan buka run dengan status **Success**.
+3. Di bagian **Artifacts**, unduh `cheat-clip-pro-debug-apk`.
+4. Ekstrak file ZIP artifact.
+5. Buka `app-debug.apk` di Android dan ikuti proses instalasi. Jika diminta, izinkan instalasi aplikasi dari sumber tersebut.
 
-### Step 2: Clone the Repository
+> Artifact Actions bersifat sementara dan dapat kedaluwarsa. Untuk distribusi jangka panjang, gunakan halaman **Releases** setelah tersedia rilis APK.
 
-Open your terminal and clone the repository:
+### 2. Siapkan backend di Android
+
+APK memerlukan backend yang berjalan di perangkat yang sama pada port **8000**. Salah satu cara yang digunakan proyek ini adalah Termux + Ubuntu melalui proot-distro.
+
+1. Pasang **Termux** dari sumber resminya (F-Droid atau repositori GitHub resmi Termux).
+2. Buka Termux, lalu jalankan:
 
 ```bash
-git clone https://github.com/galihjuansaputra/cheat-clip-pro.git
+pkg update && pkg upgrade -y
+pkg install git nodejs-lts proot-distro ffmpeg -y
+proot-distro install ubuntu
+```
+
+3. Masuk ke Ubuntu dan pasang kebutuhan sistem:
+
+```bash
+proot-distro login ubuntu
+apt update
+apt install -y python3 python3-pip python3-venv ffmpeg git
+exit
+```
+
+4. Kembali ke Termux, clone proyek:
+
+```bash
+cd ~
+git clone https://github.com/kzeee-dev/cheat-clip-pro.git
 cd cheat-clip-pro
 ```
 
----
+5. Jalankan backend:
 
-### Step 3: Install Dependencies
-
-#### 1. Frontend Dependencies
 ```bash
-npm install
+bash start.sh
 ```
 
-#### 2. Backend Dependencies
-We recommend setting up a Python virtual environment:
+Skrip akan menjalankan backend melalui Ubuntu. Pada penggunaan pertama, dependency Python yang belum tersedia dapat di-install otomatis. Proses ini bisa memerlukan waktu dan ruang penyimpanan yang cukup.
 
-* **Windows:**
-  ```powershell
-  python -m venv venv
-  venv\Scripts\activate
-  pip install -r backend/requirements.txt
-  ```
+6. Biarkan Termux/backend tetap berjalan. Buka aplikasi **Cheat Clip Pro**. APK Android menggunakan alamat backend lokal `http://localhost:8000`.
 
-* **macOS / Linux:**
-  ```bash
-  python3 -m venv venv
-  source venv/bin/activate
-  pip install -r backend/requirements.txt
-  ```
+**Jika muncul `node: command not found` di Ubuntu**, jalankan backend dengan path Node.js Termux:
 
----
+```bash
+proot-distro login ubuntu -- bash -lc 'export PATH="/data/data/com.termux/files/usr/bin:$PATH"; cd /data/data/com.termux/files/home/cheat-clip-pro; node scripts/start-backend.js'
+```
 
-### Step 4: Run the App
+### 3. Menggunakan aplikasi
 
-Launch both the frontend and backend servers concurrently:
+1. Pastikan backend sudah aktif.
+2. Buka Cheat Clip Pro.
+3. Masukkan sumber video dan API key yang diminta aplikasi (jika menggunakan fitur AI).
+4. Pilih segmen dan pengaturan klip.
+5. Jalankan render, periksa hasilnya melalui pratinjau, lalu unduh video atau ZIP.
+
+## Instalasi untuk Windows / macOS / Linux
+
+### Kebutuhan
+
+- Node.js 22 atau lebih baru.
+- Python 3.12 direkomendasikan.
+- FFmpeg.
+- Git.
+
+### Langkah instalasi
+
+Clone repository:
+
+```bash
+git clone https://github.com/kzeee-dev/cheat-clip-pro.git
+cd cheat-clip-pro
+```
+
+Install dependency frontend:
+
+```bash
+npm ci
+```
+
+Buat virtual environment Python dan install dependency backend.
+
+**Windows (PowerShell):**
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r backend/requirements.txt
+```
+
+**macOS / Linux:**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r backend/requirements.txt
+```
+
+Pastikan FFmpeg tersedia di PATH, lalu jalankan:
 
 ```bash
 npm run dev
 ```
 
-* **Web App:** [`http://localhost:5173`](http://localhost:5173)
-* **Backend API:** [`http://localhost:8000`](http://localhost:8000)
-* **API Documentation:** [`http://localhost:8000/docs`](http://localhost:8000/docs)
+Aplikasi web tersedia di `http://localhost:5173` dan backend API di `http://localhost:8000`. Dokumentasi API tersedia di `http://localhost:8000/docs`.
 
----
+> Instalasi backend memerlukan dependency pemrosesan video dan AI yang cukup besar. Waktu instalasi bergantung pada sistem operasi, arsitektur CPU, dan koneksi internet.
 
-## 🔄 Updating to the Latest Version
+## Build APK sendiri
 
-To update Cheat Clip PRO to the latest release:
+1. Buka tab **Actions** di repository.
+2. Pilih workflow **Android debug APK**.
+3. Klik **Run workflow** dan pilih branch yang ingin dibangun.
+4. Tunggu sampai workflow berstatus **Success**.
+5. Unduh artifact `cheat-clip-pro-debug-apk`, lalu ekstrak untuk mendapatkan APK.
 
-```bash
-git pull
-npm install
-pip install -r backend/requirements.txt
-```
-*(Make sure your virtual environment is activated if you created one)*
+Workflow menggunakan Node.js 22 dan Java 21 untuk membangun APK debug.
 
----
+## Konfigurasi dan keamanan
 
-## 🔑 Free Google Gemini API Key (Takes 1 Minute)
+- Jangan commit file `.env`, API key, password, token, atau file cookies.
+- Jangan membagikan file cookies YouTube kepada orang lain. Cookies dapat memberikan akses ke sesi akun.
+- API key Gemini dapat dimasukkan melalui antarmuka aplikasi bila fitur tersebut memintanya.
+- Jika backend dipasang di server lain, konfigurasi alamat API dan akses jaringan harus disesuaikan. APK Android pada konfigurasi saat ini menggunakan `localhost:8000`.
 
-Cheat Clip PRO uses Google's AI to find the best viral moments for free:
-1. Go to **[Google AI Studio](https://aistudio.google.com/)** and sign in with any Google account.
-2. Click **"Get API key"** (or **"Create API key"**).
-3. Copy your key (starts with `AIzaSy...`).
-4. Paste it into the **Gemini API Key** field in the app.
+## Troubleshooting
 
-> 💡 **Tip:** You can also type `mock` in the API Key box to test out the app with sample data without an API key!
+| Masalah | Yang perlu diperiksa |
+|---|---|
+| Aplikasi tidak terhubung ke backend | Pastikan Termux dan backend masih berjalan pada port 8000. |
+| `node: command not found` | Tambahkan direktori Node.js Termux ke PATH seperti contoh di atas. |
+| FFmpeg tidak ditemukan | Install FFmpeg di lingkungan tempat backend dijalankan dan pastikan tersedia di PATH. |
+| Instalasi dependency gagal | Periksa versi Python, arsitektur perangkat, ruang penyimpanan, dan log pip. |
+| Download video gagal | Periksa koneksi internet, dukungan sumber video, dan konfigurasi cookies bila diperlukan. |
+| APK tidak bisa dipasang sebagai pembaruan | Versi debug dari build yang berbeda bisa memiliki tanda tangan berbeda. Jika Android menolak pembaruan, simpan data penting lalu hapus versi lama sebelum memasang APK baru. |
 
----
+## Batasan dan tanggung jawab penggunaan
 
-## 🎯 How to Use
+Gunakan aplikasi hanya untuk video yang kamu miliki, berhak gunakan, atau diizinkan untuk diunduh dan diproses. Patuhi ketentuan layanan platform sumber video serta hukum hak cipta yang berlaku. Cheat Clip Pro tidak berafiliasi dengan YouTube atau platform pihak ketiga lainnya.
 
-1. **Paste a YouTube URL** — Enter any podcast, stream, or video link.
-2. **Choose Duration** — Pick `~15s` (fast hooks), `~30s` (standard shorts), or `~60s` (story clips).
-3. **Click "Analyze Video"** — The AI finds the most exciting moments using YouTube audience retention data.
-4. **Customize in Clip Studio** — Adjust your video style:
-   * **Frame & Crop**: Fullscreen 9:16 vertical, square, or split-screen facecam.
-   * **Face Tracking**: Automatically keeps the speaker in the center of the frame.
-   * **Subtitles**: Choose viral animated karaoke caption styles and fonts.
-   * **Branding & Audio**: Add your watermark logo, background music, and hook sound effects.
-   * **Hardware Acceleration**: Choose your graphics card (NVIDIA, AMD, Intel) or CPU.
-5. **Batch Render & Download** — Click **Batch Render**, then download all your finished videos together in one **.ZIP** file!
+## Kontribusi dan lisensi
 
----
+Saran, laporan bug, dan kontribusi dapat dikirim melalui [GitHub Issues](https://github.com/kzeee-dev/cheat-clip-pro/issues).
 
-## ❓ Common Problems & Easy Fixes
-
-### 1. "Failed to render video" or `The system cannot find the file specified`
-* **Cause:** `ffmpeg` or `yt-dlp` is missing on your computer.
-* **Fix:**
-  * **Windows (PowerShell):**
-    ```powershell
-    winget install Gyan.FFmpeg
-    winget install yt-dlp.yt-dlp
-    ```
-    *(Then close and reopen your terminal)*
-  * **Mac (Terminal):**
-    ```bash
-    brew install ffmpeg-full yt-dlp
-    ```
-  * Or install directly via Python: `pip install yt-dlp`
-
-### 2. `No such filter: 'subtitles'`
-* **Cause:** FFmpeg was installed without the libass subtitle filter.
-* **Fix (macOS):**
-  ```bash
-  brew install ffmpeg-full
-  ```
-  Restart the backend after installation. The app automatically prefers Homebrew's subtitle-capable `ffmpeg-full` binary.
-
-### 3. "Sign in to confirm you're not a bot"
-* **Cause:** YouTube blocks video downloads if too many requests are sent without logging in.
-* **Fix:** Click the 🍪 **Cookies** button in the top navigation bar, export your YouTube cookies using a free browser extension (like *Get cookies.txt locally*), and paste them into the app.
-
-### 4. Does this work on AMD graphics cards and Mac?
-* **Yes!** Cheat Clip PRO automatically supports:
-  * **NVIDIA** (`h264_nvenc`)
-  * **AMD** (`h264_amf` on Radeon GPUs & Ryzen CPUs)
-  * **Intel** (`h264_qsv` on Arc & UHD Graphics)
-  * **Apple Mac & CPU Software** (`libx264` universal high-speed fallback)
-* You can switch your preferred hardware acceleration encoder anytime in the Render Settings or History card.
-
----
-
-## 📄 License
-
-Distributed under the **MIT License**. Free for personal and commercial use!
+**Lisensi proyek belum ditetapkan.** Jangan menganggap source code ini telah diberikan di bawah lisensi open-source tertentu sampai file lisensi resmi ditambahkan.

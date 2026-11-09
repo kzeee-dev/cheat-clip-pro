@@ -69,6 +69,67 @@ from backend.utils.text import (
 )
 
 
+def _bounded_score(value) -> int:
+    """Normalize untrusted model score output to an integer in 0..100."""
+    try:
+        return max(0, min(100, int(float(value or 0))))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _calibrate_viral_score(clip: dict) -> int:
+    """Use a transparent weighted score when component ratings are available."""
+    weights = {
+        "hook_strength": 0.25,
+        "emotional_impact": 0.20,
+        "standalone_value": 0.25,
+        "clarity": 0.15,
+        "shareability": 0.15,
+    }
+    values = {}
+    for key in weights:
+        try:
+            values[key] = max(0, min(100, int(float(clip.get(key, 0) or 0))))
+        except (TypeError, ValueError):
+            values[key] = 0
+    # Older models and recovery paths may not return component scores.
+    if not any(values.values()):
+        try:
+            return max(0, min(100, int(float(clip.get("virality_score", 0) or 0))))
+        except (TypeError, ValueError):
+            return 0
+    return round(sum(values[key] * weight for key, weight in weights.items()))
+
+
+def _snap_clip_to_sentence_boundaries(start: float, end: float, transcript: list, start_bound: float, end_bound: float, min_duration: float, max_duration: float, tolerance: float = 1.25) -> tuple[float, float]:
+    """Snap AI-proposed cuts to nearby spoken-line boundaries without breaking duration limits."""
+    starts = [float(line.get("start", 0.0)) for line in transcript if line.get("text")]
+    ends = [float(line.get("end", 0.0)) for line in transcript if line.get("text")]
+    if not starts or not ends:
+        return start, end
+
+    snapped_start = min(starts, key=lambda value: abs(value - start))
+    snapped_end = min(ends, key=lambda value: abs(value - end))
+    if abs(snapped_start - start) <= tolerance and start_bound <= snapped_start < end:
+        candidate_start = snapped_start
+    else:
+        candidate_start = start
+    if abs(snapped_end - end) <= tolerance and start < snapped_end <= end_bound:
+        candidate_end = snapped_end
+    else:
+        candidate_end = end
+
+    candidate_duration = candidate_end - candidate_start
+    if min_duration <= candidate_duration <= max_duration:
+        return round(candidate_start, 2), round(candidate_end, 2)
+    # If snapping both ends violates limits, try each boundary independently.
+    if candidate_start != start and min_duration <= end - candidate_start <= max_duration:
+        start = candidate_start
+    if candidate_end != end and min_duration <= candidate_end - start <= max_duration:
+        end = candidate_end
+    return round(start, 2), round(end, 2)
+
+
 def _format_parsed_dict(data: dict, channel: str, lang_code: str) -> dict:
     raw_clips = data.get("clips") or []
     formatted_clips = []
@@ -83,6 +144,12 @@ def _format_parsed_dict(data: dict, channel: str, lang_code: str) -> dict:
             "end_time": float(c.get('end_time', 0.0) or 0.0),
             "hook_time": float(c.get('hook_time')) if c.get('hook_time') is not None else None,
             "virality_score": int(c.get('virality_score', 0) or 0),
+            "hook_strength": int(c.get('hook_strength', 0) or 0),
+            "emotional_impact": int(c.get('emotional_impact', 0) or 0),
+            "standalone_value": int(c.get('standalone_value', 0) or 0),
+            "clarity": int(c.get('clarity', 0) or 0),
+            "shareability": int(c.get('shareability', 0) or 0),
+            "score_reason": str(c.get('score_reason', '') or ''),
             "key_quotes": c.get('key_quotes') if isinstance(c.get('key_quotes'), list) else [],
             "title_suggestion": title_sug,
             "caption_suggestion": str(c.get('caption_suggestion', '') or ''),
@@ -1391,6 +1458,16 @@ async def analyze_video(request: AnalyzeRequest):
             f"4. Keep titles snappy, viral, engaging, and under 8 words.\n\n"
             f"Transcript (start|end[|interest] text):\n---\n{transcript_text}\n---\n\n"
             f"Rules: use exact seconds from transcript; clips must start/end at sentence boundaries; do not overlap.\n"
+            f"VIRAL INTELLIGENCE SCORING (MANDATORY, EVIDENCE-BASED):\n"
+            f"Score each candidate across five dimensions from 0 to 100:\n"
+            f"- hook_strength: immediate curiosity, surprising claim, strong question, conflict, or compelling opening. Judge the actual first seconds, not a hypothetical rewritten hook.\n"
+            f"- emotional_impact: observable humor, surprise, tension, empathy, inspiration, or other emotional response in the transcript.\n"
+            f"- standalone_value: whether the clip has enough setup, context, and payoff to make sense without the full video. Penalize missing context and cut-off thoughts.\n"
+            f"- clarity: how clearly and specifically the main idea is communicated.\n"
+            f"- shareability: whether a viewer has a concrete reason to share, discuss, save, or react to this moment.\n"
+            f"Calculate virality_score using this weighted formula: hook_strength 25%, emotional_impact 20%, standalone_value 25%, clarity 15%, shareability 15%. Round to the nearest integer. Do not inflate scores: a score above 90 requires exceptional evidence across most dimensions; ordinary useful moments should score lower.\n"
+            f"Provide score_reason in {lang_name}, one concise sentence grounded in the transcript. Do not claim actual views, retention, or future virality. Audio-energy heatmap is only a weak engagement proxy, not actual viewer retention.\n"
+            f"Prefer a few genuinely strong candidates over padding the list with weak moments. Ensure hook_time points to the real hook inside the selected clip.\n\n"
             f"Return clips sorted by virality_score desc."
         )
 
@@ -1655,6 +1732,12 @@ async def analyze_video(request: AnalyzeRequest):
                                             "end_time": getattr(c, 'end_time', 0.0),
                                             "hook_time": getattr(c, 'hook_time', None),
                                             "virality_score": getattr(c, 'virality_score', 0),
+                                            "hook_strength": getattr(c, 'hook_strength', 0),
+                                            "emotional_impact": getattr(c, 'emotional_impact', 0),
+                                            "standalone_value": getattr(c, 'standalone_value', 0),
+                                            "clarity": getattr(c, 'clarity', 0),
+                                            "shareability": getattr(c, 'shareability', 0),
+                                            "score_reason": getattr(c, 'score_reason', ''),
                                             "key_quotes": getattr(c, 'key_quotes', []),
                                             "title_suggestion": sanitize_first_person_title(getattr(c, 'title_suggestion', ''), channel, lang=lang_code),
                                             "caption_suggestion": getattr(c, 'caption_suggestion', ''),
@@ -1885,6 +1968,12 @@ async def analyze_video(request: AnalyzeRequest):
                     start = round(new_start, 2)
                     end = round(new_end, 2)
 
+            # Improve natural cut points: prefer nearby transcript sentence starts/ends.
+            start, end = _snap_clip_to_sentence_boundaries(
+                float(start), float(end), enriched_transcript, start_bound, end_bound,
+                min_target_duration, max_target_duration
+            )
+
             if hook is None or not (start <= hook <= end):
                 hook = start
             
@@ -1903,7 +1992,13 @@ async def analyze_video(request: AnalyzeRequest):
                 start_time=start,
                 end_time=end,
                 hook_time=hook,
-                virality_score=raw_clip.get('virality_score', 0),
+                virality_score=_calibrate_viral_score(raw_clip),
+                hook_strength=_bounded_score(raw_clip.get('hook_strength', 0)),
+                emotional_impact=_bounded_score(raw_clip.get('emotional_impact', 0)),
+                standalone_value=_bounded_score(raw_clip.get('standalone_value', 0)),
+                clarity=_bounded_score(raw_clip.get('clarity', 0)),
+                shareability=_bounded_score(raw_clip.get('shareability', 0)),
+                score_reason=raw_clip.get('score_reason', ''),
                 key_quotes=raw_clip.get('key_quotes') or [],
                 transcript=" ".join(clip_lines),
                 title_suggestion=sanitize_first_person_title(raw_clip.get('title_suggestion', ''), channel, lang=lang_code),
@@ -1914,6 +2009,9 @@ async def analyze_video(request: AnalyzeRequest):
         # Enforce max constraint of ~200 clips for auto clip count
         if is_auto_clip_count and len(final_clips) > 200:
             final_clips = final_clips[:200]
+
+        # Re-sort after weighted calibration so displayed ranking matches final scores.
+        final_clips.sort(key=lambda clip: clip.virality_score, reverse=True)
 
         response_heatmap = [
             HeatmapPoint(

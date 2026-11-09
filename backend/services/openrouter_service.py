@@ -245,7 +245,8 @@ async def analyze_with_openrouter(
         "Strict rules:\n"
         "1. STRICT ZERO-TRANSLATION RULE: Output titles, key_quotes, and summary in the EXACT SAME LANGUAGE as the video transcript.\n"
         "2. ZERO FIRST-PERSON PRONOUNS: Never use 'I', 'me', 'my', 'aku', 'saya' in titles or suggestions. Attribute the quote or insight to the speaker/host by name or use third-person objective framing.\n"
-        "3. You MUST respond ONLY with a valid JSON object matching this schema:\n"
+        "3. VIRAL INTELLIGENCE: For each clip, score hook_strength, emotional_impact, standalone_value, clarity, and shareability from 0-100. Compute virality_score as a weighted average: hook 25%, emotion 20%, standalone value 25%, clarity 15%, shareability 15%. Add score_reason in the transcript language, grounded in evidence. Do not claim actual views or guaranteed virality. Audio-energy heatmap is only a weak proxy, not actual audience retention.\n"
+        "4. You MUST respond ONLY with a valid JSON object matching this schema:\n"
         "{\n"
         '  "summary": "1-2 sentence video summary in the exact transcript language, followed by 2-4 hashtags",\n'
         '  "clips": [\n'
@@ -254,7 +255,13 @@ async def analyze_with_openrouter(
         '      "start_time": 10.0,\n'
         '      "end_time": 45.0,\n'
         '      "hook_time": 12.0,\n'
-        '      "virality_score": 92,\n'
+        '      "virality_score": 82,\n'
+        '      "hook_strength": 85,\n'
+        '      "emotional_impact": 75,\n'
+        '      "standalone_value": 90,\n'
+        '      "clarity": 80,\n'
+        '      "shareability": 78,\n'
+        '      "score_reason": "Brief evidence-based reason in the transcript language",\n'
         '      "key_quotes": ["quote 1", "quote 2"],\n'
         '      "title_suggestion": "Alternative viral hook title",\n'
         '      "caption_suggestion": "Social media post caption",\n'

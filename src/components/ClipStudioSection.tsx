@@ -15,6 +15,7 @@ import {
   Pause
 } from 'lucide-react';
 import { useLanguage } from '../locales';
+import { Capacitor } from '@capacitor/core';
 import { resilientFetch, apiUrl } from '../utils/api';
 import { getStoredCookies, hasStoredCookies } from '../utils/cookieUtils';
 import { detectFaceClientSide } from '../utils/clientFaceDetector';
@@ -351,6 +352,101 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
   transcript = [],
 }) => {
   const { t } = useLanguage();
+
+  const handleDownloadRenderedClip = async (
+    event: React.MouseEvent<HTMLAnchorElement>,
+    downloadPath: string,
+    filename: string
+  ) => {
+    event.preventDefault();
+
+    try {
+      // Android WebView's DownloadListener forwards clicked URLs to Android
+      // DownloadManager, which only accepts HTTP(S). A blob: URL created by
+      // fetch + URL.createObjectURL is rejected with "Can only download HTTP".
+      if (Capacitor.isNativePlatform()) {
+        let nativeDownloadPath = downloadPath;
+
+        // Client-side WebCodecs renders are held in a WebView blob URL.
+        // Android DownloadManager cannot read blob: URLs, so stream the blob
+        // to the Termux backend first and then download its HTTP(S) file URL.
+        if (/^blob:/i.test(nativeDownloadPath)) {
+          const blobUrl = nativeDownloadPath.split('?title=')[0];
+          const blobResponse = await fetch(blobUrl);
+          if (!blobResponse.ok) {
+            throw new Error(`Gagal membaca hasil render (HTTP ${blobResponse.status})`);
+          }
+          const renderedBlob = await blobResponse.blob();
+          if (!renderedBlob.size) throw new Error('File MP4 hasil render kosong.');
+
+          const formData = new FormData();
+          const safeFilename = filename.endsWith('.mp4') ? filename : `${filename}.mp4`;
+          formData.append('file', renderedBlob, safeFilename);
+          formData.append('title', safeFilename.replace(/\.mp4$/i, ''));
+
+          const saveResponse = await resilientFetch(apiUrl('/api/save-rendered-clip'), {
+            method: 'POST',
+            body: formData,
+            credentials: 'include',
+            maxRetries: 0,
+          });
+          const saveData = await saveResponse.json().catch(() => ({}));
+          if (!saveResponse.ok || !saveData.download_url) {
+            throw new Error(saveData.detail || `Gagal menyiapkan file download (HTTP ${saveResponse.status})`);
+          }
+          nativeDownloadPath = saveData.download_url;
+        }
+
+        const resolvedUrl = new URL(apiUrl(nativeDownloadPath), window.location.origin);
+        if (resolvedUrl.protocol !== 'http:' && resolvedUrl.protocol !== 'https:') {
+          throw new Error(`URL download tidak valid untuk Android: ${resolvedUrl.protocol}`);
+        }
+
+        const nativeLink = document.createElement('a');
+        nativeLink.href = resolvedUrl.toString();
+        nativeLink.download = filename.endsWith('.mp4') ? filename : `${filename}.mp4`;
+        nativeLink.style.display = 'none';
+        document.body.appendChild(nativeLink);
+        nativeLink.click();
+        nativeLink.remove();
+        return;
+      }
+
+      // Client-side renders expose blob: URLs; backend renders expose API paths.
+      // Do not pass blob: URLs through apiUrl(), which would corrupt them into
+      // a relative /blob:... path and trigger Android's HTTP-only download guard.
+      const resolvedDownloadUrl = /^(https?:|blob:)/i.test(downloadPath)
+        ? downloadPath
+        : apiUrl(downloadPath);
+      const response = /^blob:/i.test(resolvedDownloadUrl)
+        ? await fetch(resolvedDownloadUrl)
+        : await resilientFetch(resolvedDownloadUrl, {
+            method: 'GET',
+            credentials: 'include',
+            maxRetries: 1,
+          });
+      if (!response.ok) {
+        throw new Error(`Download gagal (HTTP ${response.status})`);
+      }
+
+      const blob = await response.blob();
+      if (!blob.size) throw new Error('File MP4 kosong.');
+
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = filename.endsWith('.mp4') ? filename : `${filename}.mp4`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 5000);
+    } catch (error) {
+      console.error('Rendered clip download failed:', error);
+      window.alert(
+        error instanceof Error ? error.message : 'Gagal mengunduh MP4. Coba gunakan download ZIP.'
+      );
+    }
+  };
   const isYouTube = !videoId?.startsWith('upload_') && !videoId?.startsWith('gdrive_') && !videoId?.startsWith('twitch_') && !videoUrl?.includes('/api/video') && !videoUrl?.includes('twitch.tv');
   const isTwitch = Boolean(videoId?.startsWith('twitch_') || videoUrl?.includes('twitch.tv'));
   const [hasCookies, setHasCookies] = useState<boolean>(() => hasStoredCookies());
@@ -2017,8 +2113,9 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
             <p className="studio-subtext">
               {t.studio.subtext}
             </p>
+
+            </div>
           </div>
-        </div>
 
         <div className="studio-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
           {onBackToClips && (
@@ -4417,6 +4514,27 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                         {Math.floor(clip.end_time / 60)}:{(clip.end_time % 60).toFixed(0).padStart(2, '0')} (
                         {(clip.end_time - clip.start_time).toFixed(0)}s) · Score: {clip.virality_score}%
                       </span>
+                      {(clip.score_reason || [clip.hook_strength, clip.emotional_impact, clip.standalone_value, clip.clarity, clip.shareability].some(value => typeof value === 'number' && value > 0)) && (
+                        <details style={{ marginTop: '0.35rem', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                          <summary style={{ cursor: 'pointer', color: 'var(--accent-primary)', fontWeight: 600 }}>
+                            AI Viral Intelligence · Rincian skor
+                          </summary>
+                          {clip.score_reason && <p style={{ margin: '0.4rem 0', lineHeight: 1.4 }}>{clip.score_reason}</p>}
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.3rem 0.7rem' }}>
+                            {([
+                              ['Hook', clip.hook_strength],
+                              ['Emosi', clip.emotional_impact],
+                              ['Konteks mandiri', clip.standalone_value],
+                              ['Kejelasan', clip.clarity],
+                              ['Potensi dibagikan', clip.shareability],
+                            ] as [string, number | undefined][]).map(([label, value]) => (
+                              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.4rem' }}>
+                                <span>{label}</span><strong>{typeof value === 'number' ? value : '—'}/100</strong>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
                     </div>
                   </div>
                 );
@@ -5329,7 +5447,9 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                       }
                       const finalClipName = dupCount > 0 ? `${cleanTitle} (${dupCount})` : cleanTitle;
                       const dlUrlWithTitle = c.download_url
-                        ? `${c.download_url}${c.download_url.includes('?') ? '&' : '?'}title=${encodeURIComponent(finalClipName)}`
+                        ? (/^blob:/i.test(c.download_url)
+                            ? c.download_url
+                            : `${c.download_url}${c.download_url.includes('?') ? '&' : '?'}title=${encodeURIComponent(finalClipName)}`)
                         : '';
 
                       return (
@@ -5339,6 +5459,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                           {c.download_url && (
                             <a
                               href={dlUrlWithTitle}
+                              onClick={(event) => handleDownloadRenderedClip(event, dlUrlWithTitle, `${finalClipName}.mp4`)}
                               download={`${finalClipName}.mp4`}
                               className="quick-dl-btn"
                               title={`Download ${finalClipName}.mp4`}
@@ -5664,7 +5785,9 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
               }
               const finalClipName = dupCount > 0 ? `${cleanTitle} (${dupCount})` : cleanTitle;
               const dlUrlWithTitle = clip.download_url
-                ? `${clip.download_url}${clip.download_url.includes('?') ? '&' : '?'}title=${encodeURIComponent(finalClipName)}`
+                ? (/^blob:/i.test(clip.download_url)
+                    ? clip.download_url
+                    : `${clip.download_url}${clip.download_url.includes('?') ? '&' : '?'}title=${encodeURIComponent(finalClipName)}`)
                 : '';
 
               const isError = clip.status === 'error';
@@ -5698,6 +5821,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                         clip.download_url ? (
                           <a
                             href={dlUrlWithTitle}
+                            onClick={(event) => handleDownloadRenderedClip(event, dlUrlWithTitle, `${finalClipName}.mp4`)}
                             download={`${finalClipName}.mp4`}
                             className="quick-dl-btn"
                             title={`Download ${finalClipName}.mp4`}
@@ -5756,6 +5880,27 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                       )}
                     </div>
                   </div>
+
+                  {clip.status === 'downloading' && (
+                    <div style={{ width: '100%', marginTop: '0.35rem', padding: '0.55rem 0.65rem', borderRadius: '7px', background: 'rgba(245, 158, 11, 0.07)', border: '1px solid rgba(245, 158, 11, 0.18)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', fontSize: '0.68rem', color: '#fbbf24', marginBottom: '0.35rem' }}>
+                        <span>{clip.download_phase === 'stream_trim' ? 'Mengambil & memotong stream (progres media)' : clip.download_speed?.includes('proses FFmpeg') ? 'Preparing local media' : 'Downloading source media'}</span>
+                        <strong>{Math.round(Math.max(0, Math.min(100, clip.download_percent ?? 0)))}%</strong>
+                      </div>
+                      <div style={{ height: '5px', width: '100%', borderRadius: '5px', background: 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${Math.max(0, Math.min(100, clip.download_percent ?? 0))}%`, borderRadius: '5px', background: 'linear-gradient(90deg, #f59e0b, #f97316)', transition: 'width 0.25s ease' }} />
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: '0.35rem 0.75rem', marginTop: '0.4rem', fontSize: '0.67rem', color: 'var(--text-secondary, #cbd5e1)' }}>
+                        <span>Size: {clip.downloaded || 'Preparing'} / {clip.download_total || 'unknown'}</span>
+                        <span>Speed: {clip.download_speed || '—'}</span>
+                      </div>
+                      {clip.download_eta && (
+                        <div style={{ marginTop: '0.25rem', fontSize: '0.65rem', color: 'var(--text-muted, #94a3b8)' }}>
+                          ETA: {clip.download_eta}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {clip.status === 'completed' && clip.download_url && (
                     <video

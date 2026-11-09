@@ -17,6 +17,12 @@ export interface ViralClip {
   end_time: number;
   hook_time?: number;
   virality_score: number;
+  hook_strength?: number;
+  emotional_impact?: number;
+  standalone_value?: number;
+  clarity?: number;
+  shareability?: number;
+  score_reason?: string;
   key_quotes: string[];
   transcript: string;
   title_suggestion?: string;
@@ -163,6 +169,12 @@ export interface RenderClipStatus {
   base_title?: string;
   status: 'pending' | 'downloading' | 'transcribing' | 'tracking' | 'rendering' | 'completed' | 'error';
   progress_percent: number;
+  download_percent?: number;
+  downloaded?: string;
+  download_total?: string;
+  download_speed?: string;
+  download_eta?: string;
+  download_phase?: 'download' | 'stream_trim' | 'local_prepare' | string;
   download_url?: string;
   error_message?: string;
   error?: string;

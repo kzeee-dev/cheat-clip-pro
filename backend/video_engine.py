@@ -6,6 +6,7 @@ import time
 import shutil
 import logging
 import subprocess
+import signal
 import unicodedata
 import math
 import urllib.parse
@@ -16,6 +17,7 @@ import threading
 import queue
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple, Union, Callable
+from types import SimpleNamespace
 from PIL import Image, ImageDraw, ImageFont
 from backend.utils.text import is_twitch_url, extract_twitch_info, get_twitch_canonical_url, canonical_video_url
 
@@ -340,6 +342,9 @@ def check_encoder_support(encoder_name: str) -> bool:
 
 
 ENCODER_CONFIGS: Dict[str, Tuple[str, List[str]]] = {
+    # Android MediaCodec can use the phone's dedicated video encoder instead of
+    # consuming CPU cores. It is selected only after a real FFmpeg probe passes.
+    "mediacodec": ("h264_mediacodec", ["-c:v", "h264_mediacodec", "-b:v", "6M"]),
     "nvenc": ("h264_nvenc", ["-c:v", "h264_nvenc", "-preset", "p4", "-cq", "23"]),
     "amf": ("h264_amf", ["-c:v", "h264_amf", "-quality", "speed", "-rc", "cbr", "-b:v", "6M"]),
     "qsv": ("h264_qsv", ["-c:v", "h264_qsv", "-preset", "veryfast", "-global_quality", "23", "-look_ahead", "0"]),
@@ -392,11 +397,20 @@ def detect_hardware_support() -> Dict[str, Any]:
     if _DETECTED_SUPPORT is not None:
         return _DETECTED_SUPPORT
 
+    # MediaCodec is Android-only and must pass an actual encode probe before use.
+    is_android = sys.platform.startswith("linux") and bool(
+        os.environ.get("ANDROID_ROOT") or os.environ.get("ANDROID_DATA")
+    )
+    has_mediacodec = (
+        check_encoder_support("h264_mediacodec") if is_android else False
+    )
     has_nvenc = check_encoder_support("h264_nvenc")
     has_amf = check_encoder_support("h264_amf")
     has_qsv = check_encoder_support("h264_qsv")
 
-    if has_nvenc:
+    if has_mediacodec:
+        recommended = "mediacodec"
+    elif has_nvenc:
         recommended = "nvenc"
     elif has_amf:
         recommended = "amf"
@@ -408,6 +422,7 @@ def detect_hardware_support() -> Dict[str, Any]:
     gpu_name = get_system_gpu_name()
 
     _DETECTED_SUPPORT = {
+        "mediacodec": has_mediacodec,
         "nvenc": has_nvenc,
         "amf": has_amf,
         "qsv": has_qsv,
@@ -420,11 +435,8 @@ def detect_hardware_support() -> Dict[str, Any]:
 
 def get_preferred_video_encoder() -> Tuple[str, List[str]]:
     """
-    Auto-detects the fastest available hardware encoder:
-    1. NVIDIA NVENC (h264_nvenc)
-    2. AMD AMF (h264_amf)
-    3. Intel QuickSync (h264_qsv)
-    4. Universal CPU software encoding (libx264)
+    Auto-detects a working hardware encoder, preferring Android MediaCodec
+    on supported phones, then NVIDIA/AMD/Intel hardware, then CPU fallback.
     """
     support = detect_hardware_support()
     rec = support.get("recommended", "cpu")
@@ -821,12 +833,199 @@ def transcribe_local_video_file(
     return transcript_lines
 
 
+def _terminate_process_tree(process, grace_seconds=5):
+    """Terminate yt-dlp and every FFmpeg child in its isolated process group."""
+    if process is None:
+        return
+
+    # yt-dlp's section downloader launches FFmpeg, which inherits the output
+    # pipe. Killing only yt-dlp can leave FFmpeg orphaned and the reader blocked.
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        except Exception:
+            logger.debug("Could not send SIGTERM to yt-dlp process group", exc_info=True)
+    elif process.poll() is None:
+        try:
+            process.terminate()
+        except Exception:
+            pass
+
+    try:
+        process.wait(timeout=grace_seconds)
+    except Exception:
+        pass
+
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except Exception:
+            logger.debug("Could not send SIGKILL to yt-dlp process group", exc_info=True)
+    elif process.poll() is None:
+        try:
+            process.kill()
+        except Exception:
+            pass
+
+    try:
+        process.wait(timeout=2)
+    except Exception:
+        pass
+
+
+def _run_ytdlp_with_progress(cmd, timeout, progress_callback=None):
+    """Run yt-dlp while streaming byte, speed, ETA and percentage updates to the UI."""
+    progress_cmd = list(cmd) + [
+        "--newline",
+        "--progress-template",
+        "download:%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+    ]
+    process = subprocess.Popen(
+        progress_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        # Isolate yt-dlp and its FFmpeg child so timeout cleanup cannot leave
+        # network downloads running after the parent process has exited.
+        start_new_session=(os.name == "posix"),
+    )
+    output_queue = queue.Queue()
+
+    def _reader():
+        try:
+            if process.stdout is not None:
+                for output_line in iter(process.stdout.readline, ""):
+                    output_queue.put(output_line)
+        finally:
+            output_queue.put(None)
+
+    reader = threading.Thread(target=_reader, name="yt-dlp-progress-reader", daemon=True)
+    reader.start()
+    started = time.monotonic()
+    last_progress_at = started
+    last_heartbeat_at = started
+    last_progress_payload = {
+        "percent": 0.0, "downloaded": "", "total": "", "speed": "", "eta": ""
+    }
+    # yt-dlp can spend a long time downloading selected media without emitting
+    # progress-template lines (notably while fetching fragmented/HLS streams).
+    # Watch its .part file as a fallback so the UI still receives real byte
+    # movement and measured throughput instead of a permanent "waiting" label.
+    output_path = None
+    for output_flag in ("-o", "--output"):
+        try:
+            output_index = cmd.index(output_flag)
+            output_path = Path(cmd[output_index + 1])
+            break
+        except (ValueError, IndexError):
+            continue
+    last_file_bytes = 0
+    last_file_sample_at = started
+    output_lines = []
+    finished = False
+    while not finished:
+        elapsed = time.monotonic() - started
+        if elapsed >= timeout:
+            _terminate_process_tree(process)
+            raise subprocess.TimeoutExpired(progress_cmd, timeout, output="".join(output_lines))
+        try:
+            line = output_queue.get(timeout=min(0.75, max(0.05, timeout - elapsed)))
+        except queue.Empty:
+            if process.poll() is not None and not reader.is_alive():
+                break
+            # Publish honest activity heartbeats while yt-dlp is waiting for
+            # YouTube/network data. Keep the last real percentage unchanged.
+            now = time.monotonic()
+            if progress_callback and now - last_heartbeat_at >= 2.0:
+                wait_seconds = int(now - last_progress_at)
+                current_file_bytes = 0
+                if output_path is not None:
+                    # yt-dlp normally writes <output>.part; some downloaders
+                    # expose the final path directly before the process exits.
+                    for candidate in (Path(str(output_path) + ".part"), output_path):
+                        try:
+                            if candidate.is_file():
+                                current_file_bytes = max(current_file_bytes, candidate.stat().st_size)
+                        except OSError:
+                            pass
+                sample_elapsed = max(0.001, now - last_file_sample_at)
+                if current_file_bytes > last_file_bytes:
+                    bytes_per_second = (current_file_bytes - last_file_bytes) / sample_elapsed
+                    if bytes_per_second >= 1024 * 1024:
+                        measured_speed = f"{bytes_per_second / (1024 * 1024):.2f} MiB/s"
+                    else:
+                        measured_speed = f"{bytes_per_second / 1024:.0f} KiB/s"
+                    downloaded_label = f"{current_file_bytes / (1024 * 1024):.1f} MiB"
+                    heartbeat_payload = {
+                        **last_progress_payload,
+                        "downloaded": downloaded_label,
+                        "speed": measured_speed,
+                        "heartbeat": True,
+                        "source": "file_size_fallback",
+                    }
+                    last_file_bytes = current_file_bytes
+                    last_file_sample_at = now
+                else:
+                    heartbeat_payload = {
+                        **last_progress_payload,
+                        "speed": f"Menunggu respons jaringan ({wait_seconds} dtk)",
+                        "heartbeat": True,
+                    }
+                progress_callback(heartbeat_payload)
+                last_heartbeat_at = now
+            continue
+        if line is None:
+            finished = True
+            continue
+        output_lines.append(line)
+        clean = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', line.strip())
+        if progress_callback and clean.startswith("download:"):
+            parts = clean[len("download:"):].strip().split("|")
+            if len(parts) >= 5:
+                pct, downloaded, total, speed, eta = [part.strip() for part in parts[:5]]
+                try:
+                    percent = float(re.sub(r"[^0-9.]", "", pct) or 0)
+                except ValueError:
+                    percent = 0.0
+                last_progress_payload = {
+                    "percent": percent,
+                    "downloaded": downloaded if downloaded != "NA" else "",
+                    "total": total if total != "NA" else "",
+                    "speed": speed if speed != "NA" else "",
+                    "eta": eta if eta != "NA" else "",
+                }
+                last_progress_at = time.monotonic()
+                last_heartbeat_at = last_progress_at
+                progress_callback(last_progress_payload)
+    try:
+        process.wait(timeout=2)
+    except Exception:
+        pass
+    finally:
+        # Also reap any FFmpeg descendants if yt-dlp exited unexpectedly while
+        # a child still held stdout open. This prevents orphaned .part writers.
+        _terminate_process_tree(process)
+        if process.stdout is not None:
+            try:
+                process.stdout.close()
+            except Exception:
+                pass
+    output = "".join(output_lines)
+    return SimpleNamespace(returncode=process.returncode, stdout=output, stderr=output)
+
+
 def download_clip_segment(
     video_url: str,
     start_time: float,
     end_time: float,
     output_filename: str,
-    cookies_content: Optional[str] = None
+    cookies_content: Optional[str] = None,
+    progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None
 ) -> str:
     """
     Downloads or slices the requested time slice in high definition (1080p).
@@ -918,8 +1117,26 @@ def download_clip_segment(
             "-movflags", "+faststart",
             str(output_path)
         ]
-        res = subprocess.run(slice_cmd, capture_output=True, text=True, timeout=slice_timeout)
-        if output_path.exists() and is_valid_mp4(output_path, decode_check=True):
+        def _on_local_slice_progress(info):
+            if not progress_callback:
+                return
+            try:
+                current_size = output_path.stat().st_size if output_path.exists() else 0
+                downloaded_label = f"{current_size / (1024 * 1024):.1f} MB"
+            except OSError:
+                downloaded_label = ""
+            progress_callback({
+                "percent": info.get("percent", 0.0),
+                "downloaded": downloaded_label,
+                "total": "ukuran hasil akhir belum diketahui",
+                "speed": f"{info.get('speed', '0x')} proses FFmpeg",
+                "eta": "",
+            })
+
+        res = _run_ffmpeg_with_progress(
+            slice_cmd, slice_timeout, _on_local_slice_progress, clip_duration
+        )
+        if output_path.exists() and is_valid_mp4(output_path):
             return str(output_path)
         if output_path.exists():
             try:
@@ -959,13 +1176,23 @@ def download_clip_segment(
     # Ensures clips > 1 minute (e.g. 70s, 90s, 120s, 180s) have ample time to download and merge without timing out.
     timeout_sec = max(300, min(1200, int(clip_duration * 5) + 90))
 
+    # Bound the entire fallback chain, not just each individual subprocess.
+    # A short clip must not spend 10-30 minutes cycling through identical network failures.
+    overall_timeout = max(720, min(1800, int(clip_duration * 8) + 600))
+    overall_deadline = time.monotonic() + overall_timeout
+
     with ephemeral_cookies_file(cookies_content) as temp_cookies:
         has_cookies = temp_cookies is not None or get_effective_cookies_path() is not None
-        # If cookies are present, try with cookies first; if rejected by YouTube (or any reload/bot error), try guest mode.
+        # Guest mode is useful for auth/session rejection, not for a stalled network.
         attempts = [True, False] if has_cookies else [False]
         last_err_snippet = "unknown"
 
         for use_cookies in attempts:
+            remaining = int(overall_deadline - time.monotonic())
+            if remaining <= 0:
+                last_err_snippet = f"overall download timeout: budget exhausted after {overall_timeout}s"
+                break
+
             mode_label = "with cookies" if use_cookies else "guest mode (without cookies)"
             base_cmd = get_yt_dlp_base_cmd(include_cookies=use_cookies, cookies_path=temp_cookies if use_cookies else None)
             logger.info(f"Downloading HD section ({clip_duration:.1f}s) {t_start_fmt} -> {t_end_fmt} for {clean_url} ({mode_label}, timeout: {timeout_sec}s)")
@@ -987,8 +1214,8 @@ def download_clip_segment(
                 clean_url
             ]
             try:
-                res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_sec)
-                if res.returncode == 0 and is_valid_mp4(output_path, decode_check=True):
+                res = _run_ytdlp_with_progress(cmd, timeout=min(timeout_sec, max(1, int(overall_deadline - time.monotonic()))), progress_callback=progress_callback)
+                if res.returncode == 0 and is_valid_mp4(output_path):
                     logger.info(f"Successfully downloaded section ({mode_label}): {output_path} ({output_path.stat().st_size} bytes)")
                     return str(output_path)
                 # If not valid or returncode != 0, clean up any incomplete/corrupt partial file immediately
@@ -1015,6 +1242,12 @@ def download_clip_segment(
                         pass
                 last_err_snippet = str(e)
 
+            # Stop the fallback chain as soon as its shared budget is exhausted.
+            remaining_budget = int(overall_deadline - time.monotonic())
+            if remaining_budget <= 0:
+                last_err_snippet = f"overall download timeout: budget exhausted after {overall_timeout}s"
+                break
+
             # Method 2: Fallback - Extract direct stream URLs with yt-dlp and slice using FFmpeg with network reconnect
             logger.info(f"Direct section download fallback ({last_err_snippet}), trying stream URL trimming with auto-reconnect ({mode_label})...")
             try:
@@ -1030,43 +1263,81 @@ def download_clip_segment(
                     "-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best",
                     clean_url
                 ]
-                url_res = subprocess.run(url_cmd, capture_output=True, text=True, timeout=30)
+                url_res = subprocess.run(url_cmd, capture_output=True, text=True, timeout=min(30, max(1, int(overall_deadline - time.monotonic()))))
                 if url_res.returncode == 0 and url_res.stdout.strip():
                     urls = url_res.stdout.strip().split("\n")
                     video_stream = urls[0]
                     audio_stream = urls[1] if len(urls) > 1 else urls[0]
 
-                    trim_timeout = max(240, min(900, int(clip_duration * 4.5) + 60))
-                    trim_cmd = [
-                        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                        "-reconnect", "1",
-                        "-reconnect_at_eof", "1",
-                        "-reconnect_streamed", "1",
-                        "-reconnect_delay_max", "5",
-                        "-ss", str(start_time),
-                        "-i", video_stream,
-                        "-ss", str(start_time),
-                        "-i", audio_stream,
-                        "-t", str(clip_duration),
-                        "-map", "0:v:0", "-map", "1:a:0?",
-                        *ACTIVE_ENCODER_ARGS,
-                        "-c:a", "aac",
-                        "-b:a", "192k",
-                        "-avoid_negative_ts", "make_zero",
-                        "-movflags", "+faststart",
-                        str(output_path)
-                    ]
-                    trim_res = subprocess.run(trim_cmd, capture_output=True, text=True, timeout=trim_timeout)
-                    if trim_res.returncode == 0 and is_valid_mp4(output_path, decode_check=True):
-                        logger.info(f"Successfully trimmed stream URLs with FFmpeg ({mode_label}): {output_path} ({output_path.stat().st_size} bytes)")
-                        return str(output_path)
+                    # YouTube HLS manifest streams have already stalled for minutes on the
+                    # direct FFmpeg path. Skip that expensive retry and let yt-dlp try
+                    # its lower-resolution section-download fallbacks instead.
+                    if "manifest.googlevideo.com/api/manifest/hls_playlist/" in video_stream:
+                        last_err_snippet = "direct FFmpeg fallback skipped for stalled YouTube HLS stream"
+                        logger.warning(
+                            "Skipping direct FFmpeg stream trimming for YouTube HLS; "
+                            "continuing with yt-dlp 720p/480p fallbacks."
+                        )
                     else:
-                        if output_path.exists():
+                        trim_timeout = max(240, min(900, int(clip_duration * 4.5) + 60))
+                        trim_cmd = [
+                            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                            "-reconnect", "1",
+                            "-reconnect_at_eof", "1",
+                            "-reconnect_streamed", "1",
+                            "-reconnect_delay_max", "5",
+                            "-ss", str(start_time),
+                            "-i", video_stream,
+                            "-ss", str(start_time),
+                            "-i", audio_stream,
+                            "-t", str(clip_duration),
+                            "-map", "0:v:0", "-map", "1:a:0?",
+                            *ACTIVE_ENCODER_ARGS,
+                            "-c:a", "aac",
+                            "-b:a", "192k",
+                            "-avoid_negative_ts", "make_zero",
+                            "-movflags", "+faststart",
+                            str(output_path)
+                        ]
+                        def _on_direct_stream_progress(info):
+                            if not progress_callback:
+                                return
                             try:
-                                output_path.unlink()
-                            except Exception:
-                                pass
-                        last_err_snippet = trim_res.stderr[:300] if (trim_res and trim_res.stderr) else "stream trimming failed"
+                                current_size = output_path.stat().st_size if output_path.exists() else 0
+                                downloaded_label = f"{current_size / (1024 * 1024):.1f} MB"
+                            except OSError:
+                                downloaded_label = ""
+                            heartbeat = bool(info.get("heartbeat"))
+                            speed_label = (
+                                info.get("speed", "Menunggu data jaringan")
+                                if heartbeat
+                                else f"{info.get('speed', '0x')} proses FFmpeg"
+                            )
+                            progress_callback({
+                                "percent": info.get("percent", 0.0),
+                                "downloaded": downloaded_label,
+                                "total": "ukuran hasil akhir belum diketahui",
+                                "speed": speed_label,
+                                "eta": "",
+                                "phase": "stream_trim",
+                            })
+
+                        trim_res = _run_ffmpeg_with_progress(
+                            trim_cmd,
+                            min(trim_timeout, max(1, int(overall_deadline - time.monotonic()))),
+                            _on_direct_stream_progress,
+                            clip_duration
+                        )
+                        if trim_res.returncode == 0 and is_valid_mp4(output_path):
+                            logger.info(f"Successfully trimmed stream URLs with FFmpeg ({mode_label}): {output_path} ({output_path.stat().st_size} bytes)")
+                            return str(output_path)
+                        else:
+                            if output_path.exists():
+                                try:
+                                    output_path.unlink()
+                                except Exception:
+                                    pass
+                            last_err_snippet = trim_res.stderr[:300] if (trim_res and trim_res.stderr) else "stream trimming failed"
             except Exception as e:
                 logger.error(f"Fallback stream trimming failed ({mode_label}): {e}")
                 if output_path.exists():
@@ -1075,6 +1346,11 @@ def download_clip_segment(
                     except Exception:
                         pass
                 last_err_snippet = str(e)
+
+            remaining_budget = int(overall_deadline - time.monotonic())
+            if remaining_budget <= 0:
+                last_err_snippet = f"overall download timeout: budget exhausted after {overall_timeout}s"
+                break
 
             # Method 3: Fallback - Download at 720p (vastly lower bandwidth, skips SABR/1080p throttling)
             logger.info(f"Method 3: Attempting fast 720p fallback section download for {clean_url} ({mode_label})...")
@@ -1099,8 +1375,8 @@ def download_clip_segment(
                     clean_url
                 ]
                 timeout_720p = max(200, min(600, int(clip_duration * 4) + 60))
-                res_720p = subprocess.run(cmd_720p, capture_output=True, text=True, timeout=timeout_720p)
-                if res_720p.returncode == 0 and is_valid_mp4(output_path, decode_check=True):
+                res_720p = _run_ytdlp_with_progress(cmd_720p, timeout=min(timeout_720p, max(1, int(overall_deadline - time.monotonic()))), progress_callback=progress_callback)
+                if res_720p.returncode == 0 and is_valid_mp4(output_path):
                     logger.info(f"Successfully downloaded 720p fallback section ({mode_label}): {output_path} ({output_path.stat().st_size} bytes)")
                     return str(output_path)
                 if output_path.exists():
@@ -1118,6 +1394,11 @@ def download_clip_segment(
                     except Exception:
                         pass
                 last_err_snippet = str(e)
+
+            remaining_budget = int(overall_deadline - time.monotonic())
+            if remaining_budget <= 0:
+                last_err_snippet = f"overall download timeout: budget exhausted after {overall_timeout}s"
+                break
 
             # Method 4: Fallback - Download at 480p / lowest bandwidth (guaranteed to succeed on high lag)
             logger.info(f"Method 4: Attempting low-bandwidth 480p fallback section download for {clean_url} ({mode_label})...")
@@ -1142,8 +1423,8 @@ def download_clip_segment(
                     clean_url
                 ]
                 timeout_480p = max(150, min(450, int(clip_duration * 3) + 45))
-                res_480p = subprocess.run(cmd_480p, capture_output=True, text=True, timeout=timeout_480p)
-                if res_480p.returncode == 0 and is_valid_mp4(output_path, decode_check=True):
+                res_480p = _run_ytdlp_with_progress(cmd_480p, timeout=min(timeout_480p, max(1, int(overall_deadline - time.monotonic()))), progress_callback=progress_callback)
+                if res_480p.returncode == 0 and is_valid_mp4(output_path):
                     logger.info(f"Successfully downloaded 480p fallback section ({mode_label}): {output_path} ({output_path.stat().st_size} bytes)")
                     return str(output_path)
                 if output_path.exists():
@@ -1162,9 +1443,24 @@ def download_clip_segment(
                         pass
                 last_err_snippet = str(e)
 
-            # If cookies were used and failed due to reload / session error or bot block, log and proceed to guest mode
+            # Only retry without cookies when the failure looks like an auth/session rejection.
+            # Network timeouts are shared across all methods and should not be repeated in guest mode.
             if use_cookies:
-                logger.warning(f"Download with cookies failed ({last_err_snippet}). Automatically attempting guest mode fallback...")
+                auth_error_terms = (
+                    "reloaded", "reload", "confirm you're not a bot",
+                    "sign in", "login", "authentication", "cookie",
+                    "403", "429"
+                )
+                if not any(term in last_err_snippet.lower() for term in auth_error_terms):
+                    logger.info(
+                        "Skipping guest-mode retry because the cookie attempt failed "
+                        "for a non-auth reason; avoiding duplicate network retries."
+                    )
+                    break
+                logger.warning(
+                    f"Download with cookies failed due to a likely auth/session issue "
+                    f"({last_err_snippet}). Attempting guest mode once..."
+                )
 
     # Ensure any corrupt partial file is unlinked
     if output_path.exists():
@@ -1207,7 +1503,20 @@ def download_full_raw_video(
 
     if local_source and local_source.exists():
         logger.info(f"Copying local source video to raw output: {local_source} -> {output_path}")
+        if not is_valid_mp4(local_source):
+            raise RuntimeError(
+                f"Local source video is invalid or incomplete: {local_source.name}. "
+                "Please re-upload or re-analyze the source video."
+            )
         shutil.copyfile(str(local_source), str(output_path))
+        if not is_valid_mp4(output_path):
+            try:
+                os.unlink(output_path)
+            except OSError:
+                pass
+            raise RuntimeError(
+                "Copied local video failed MP4 validation. Please retry or re-upload the source."
+            )
         if progress_callback:
             progress_callback({"percent": 100.0, "downloaded": "Complete", "total": "Complete", "speed": "", "eta": ""})
         return str(output_path)
@@ -1232,14 +1541,97 @@ def download_full_raw_video(
                 "-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best",
                 "-o", str(output_path),
                 "--merge-output-format", "mp4",
+                "--socket-timeout", "20",
+                "--retries", "5",
+                "--fragment-retries", "5",
+                "--file-access-retries", "3",
+                "-N", "4",
                 "--newline",
                 "--progress-template", "download:%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
                 clean_url
             ]
             logger.info(f"Downloading full raw video ({mode_label}) from {clean_url} to {output_path}...")
 
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-            for line in iter(process.stdout.readline, ''):
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                start_new_session=(os.name == "posix"),
+            )
+
+            # Drain stdout on a dedicated thread so a stalled network request
+            # cannot block the event loop worker forever inside readline().
+            output_queue: queue.Queue = queue.Queue()
+
+            def _read_download_output():
+                try:
+                    if process.stdout is not None:
+                        for output_line in iter(process.stdout.readline, ""):
+                            output_queue.put(output_line)
+                finally:
+                    output_queue.put(None)
+
+            reader = threading.Thread(
+                target=_read_download_output,
+                name=f"yt-dlp-log-{Path(output_path).name}",
+                daemon=True,
+            )
+            reader.start()
+
+            try:
+                total_timeout = max(
+                    300,
+                    int(os.environ.get("CHEAT_CLIP_RAW_DOWNLOAD_TIMEOUT", "21600")),
+                )
+            except (TypeError, ValueError):
+                total_timeout = 21600
+            try:
+                idle_timeout = max(
+                    60,
+                    int(os.environ.get("CHEAT_CLIP_DOWNLOAD_IDLE_TIMEOUT", "300")),
+                )
+            except (TypeError, ValueError):
+                idle_timeout = 300
+            started_at = time.monotonic()
+            last_output_at = started_at
+            last_progress_at = started_at
+            last_heartbeat_at = started_at
+            last_progress_payload = {
+                "percent": 0.0, "downloaded": "", "total": "", "speed": "", "eta": ""
+            }
+            reader_finished = False
+            timeout_reason = None
+
+            while not reader_finished:
+                elapsed = time.monotonic() - started_at
+                if elapsed >= total_timeout:
+                    timeout_reason = f"total download timeout ({total_timeout}s)"
+                    break
+
+                try:
+                    line = output_queue.get(timeout=min(1.0, total_timeout - elapsed))
+                except queue.Empty:
+                    now = time.monotonic()
+                    if progress_callback and now - last_heartbeat_at >= 2.0:
+                        wait_seconds = int(now - last_progress_at)
+                        progress_callback({
+                            **last_progress_payload,
+                            "speed": f"Menunggu respons jaringan ({wait_seconds} dtk)",
+                            "heartbeat": True,
+                        })
+                        last_heartbeat_at = now
+                    if now - last_output_at >= idle_timeout:
+                        timeout_reason = f"no yt-dlp output for {idle_timeout}s"
+                        break
+                    continue
+
+                if line is None:
+                    reader_finished = True
+                    break
+
+                last_output_at = time.monotonic()
                 raw_line = line.strip()
                 if not raw_line:
                     continue
@@ -1255,13 +1647,16 @@ def download_full_raw_video(
                             pct_val = float(clean_pct) if clean_pct else 0.0
                         except Exception:
                             pct_val = 0.0
-                        progress_callback({
+                        last_progress_payload = {
                             "percent": pct_val,
                             "downloaded": dl_str.strip() if dl_str and dl_str != "NA" else f"{pct_val:.1f}%",
                             "total": tot_str.strip() if tot_str and tot_str != "NA" else "",
                             "speed": spd_str.strip() if spd_str and spd_str != "NA" else "",
                             "eta": eta_str.strip() if eta_str and eta_str != "NA" else ""
-                        })
+                        }
+                        last_progress_at = time.monotonic()
+                        last_heartbeat_at = last_progress_at
+                        progress_callback(last_progress_payload)
                 elif "[download]" in clean_line and progress_callback:
                     match = re.search(r'([0-9]+(?:\.[0-9]+)?)\s*%', clean_line)
                     if match:
@@ -1272,22 +1667,81 @@ def download_full_raw_video(
                         spd_match = re.search(r'at\s+([0-9.]+\s*[a-zA-Z]+/s)', clean_line)
                         eta_match = re.search(r'ETA\s+([0-9:]+)', clean_line)
                         tot_match = re.search(r'of\s+~?([0-9.]+\s*[a-zA-Z]+)', clean_line)
-                        progress_callback({
+                        last_progress_payload = {
                             "percent": pct_val,
                             "downloaded": f"{pct_val:.1f}%",
                             "total": tot_match.group(1) if tot_match else "",
                             "speed": spd_match.group(1) if spd_match else "",
                             "eta": eta_match.group(1) if eta_match else ""
-                        })
-            process.stdout.close()
-            returncode = process.wait()
+                        }
+                        last_progress_at = time.monotonic()
+                        last_heartbeat_at = last_progress_at
+                        progress_callback(last_progress_payload)
 
-            if os.path.exists(output_path) and os.path.getsize(output_path) > 10000:
-                logger.info(f"Full raw video downloaded successfully ({mode_label}, {os.path.getsize(output_path)} bytes)")
+            if timeout_reason:
+                logger.warning(
+                    f"Full raw video download stopped for {clean_url} ({mode_label}): {timeout_reason}"
+                )
+                _terminate_process_tree(process)
+                if process.stdout:
+                    try:
+                        process.stdout.close()
+                    except Exception:
+                        pass
+                reader.join(timeout=1)
+                if os.path.exists(output_path):
+                    try:
+                        os.unlink(output_path)
+                    except Exception:
+                        pass
+                if "idle" in timeout_reason:
+                    raise RuntimeError(
+                        f"Video download timed out after {idle_timeout} seconds without receiving data. "
+                        "Check the internet connection and retry."
+                    )
+                raise RuntimeError(
+                    f"Video download exceeded the maximum allowed time ({total_timeout} seconds)."
+                )
+
+            try:
+                returncode = process.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+                if os.path.exists(output_path):
+                    try:
+                        os.unlink(output_path)
+                    except Exception:
+                        pass
+                raise RuntimeError("Video download process did not exit after closing its output stream.")
+
+            reader.join(timeout=1)
+            if process.stdout:
+                process.stdout.close()
+
+            if (
+                returncode == 0
+                and os.path.exists(output_path)
+                and os.path.getsize(output_path) > 10000
+                and is_valid_mp4(output_path)
+            ):
+                logger.info(
+                    f"Full raw video downloaded successfully ({mode_label}, "
+                    f"{os.path.getsize(output_path)} bytes)"
+                )
                 return str(output_path)
 
+            if os.path.exists(output_path):
+                try:
+                    os.unlink(output_path)
+                except Exception:
+                    pass
+
             if use_cookies:
-                logger.warning(f"Full raw video download with cookies exited with code {returncode}. Retrying in guest mode...")
+                logger.warning(
+                    f"Full raw video download with cookies exited with code {returncode} "
+                    "or produced an invalid MP4. Retrying in guest mode..."
+                )
 
     raise RuntimeError("Failed to download raw video. Please check your cookies or network connection.")
 
@@ -3188,6 +3642,12 @@ def _run_ffmpeg_with_progress(cmd, timeout, progress_callback, duration):
         reader.start()
         deadline = time.monotonic() + timeout
         stream_finished = False
+        last_progress_at = time.monotonic()
+        last_heartbeat_at = last_progress_at
+        last_progress_payload = {
+            "frame": 0, "fps": 0.0, "time": 0.0,
+            "speed": "0x", "percent": 0.0, "status": "waiting"
+        }
 
         while not stream_finished:
             if time.monotonic() >= deadline:
@@ -3200,6 +3660,18 @@ def _run_ffmpeg_with_progress(cmd, timeout, progress_callback, duration):
             except queue.Empty:
                 if process.poll() is not None and not reader.is_alive():
                     break
+                # FFmpeg's media-time percentage cannot advance while an HTTP
+                # input is stalled. Send a heartbeat without faking progress.
+                now = time.monotonic()
+                if progress_callback and now - last_heartbeat_at >= 2.0:
+                    wait_seconds = int(now - last_progress_at)
+                    progress_callback({
+                        **last_progress_payload,
+                        "speed": f"Menunggu data jaringan ({wait_seconds} dtk)",
+                        "status": "waiting",
+                        "heartbeat": True,
+                    })
+                    last_heartbeat_at = now
                 continue
 
             if line is None:
@@ -3222,14 +3694,17 @@ def _run_ffmpeg_with_progress(cmd, timeout, progress_callback, duration):
                         + int(parts[-3]) * 3600
                     ) if len(parts) == 3 else 0.0
 
-                    progress_callback({
+                    last_progress_payload = {
                         "frame": int(metrics.get("frame", 0) or 0),
                         "fps": float(metrics.get("fps", 0) or 0),
                         "time": seconds,
                         "speed": metrics.get("speed", "0x"),
                         "percent": min(100.0, max(0.0, seconds / max(duration, 0.1) * 100)),
-                        "status": value
-                    })
+                        "status": value,
+                    }
+                    last_progress_at = time.monotonic()
+                    last_heartbeat_at = last_progress_at
+                    progress_callback(last_progress_payload)
                 except Exception:
                     logger.debug("Could not publish FFmpeg progress", exc_info=True)
 
@@ -3529,6 +4004,34 @@ def render_clip_to_mp4(
     except subprocess.TimeoutExpired:
         logger.warning(f"Hardware encoder ({chosen_encoder_name}) timed out after {render_timeout}s.")
         res = None
+
+    # Some hardware encoders can exit successfully but still leave an unusable
+    # container (driver/device quirks). Validate the produced MP4 before accepting
+    # the fast path so the existing libx264 fallback can recover automatically.
+    if (
+        res is not None
+        and res.returncode == 0
+        and (
+            not os.path.exists(output_mp4_path)
+            or not is_valid_mp4(output_mp4_path)
+        )
+    ):
+        logger.warning(
+            "Encoder %s returned success but produced an invalid MP4; "
+            "triggering the safe CPU fallback.",
+            chosen_encoder_name,
+        )
+        try:
+            if os.path.exists(output_mp4_path):
+                os.unlink(output_mp4_path)
+        except OSError:
+            pass
+        res = subprocess.CompletedProcess(
+            args=cmd,
+            returncode=1,
+            stdout="",
+            stderr="Encoder exited successfully but output MP4 failed validation.",
+        )
 
     if res is None or res.returncode != 0:
         err_msg_initial = res.stderr[:250] if (res and res.stderr) else f"Timed out after {render_timeout}s"

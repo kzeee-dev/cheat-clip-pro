@@ -8,13 +8,15 @@ import uuid
 import zipfile
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
+from urllib.parse import quote
 
 from backend.config import (
     ACTIVE_ENCODER_NAME,
     EXPORTS_DIR,
     detect_hardware_support,
+    is_valid_mp4,
     logger,
 )
 from backend.schemas.render import (
@@ -112,10 +114,13 @@ async def retry_batch_rendering(
         raise HTTPException(status_code=400, detail="Batch configuration expired. Please start a new render.")
 
     if batch.get("overall_status") == "running":
-        # Check if any clip is actively running
-        running = any(c.get("status") in ["downloading", "transcribing", "rendering"] for c in batch.get("clips", []))
-        if running:
-            raise HTTPException(status_code=400, detail="Batch is currently rendering. Please wait for the current clip to finish.")
+        # A batch may be queued behind the global render semaphore while all
+        # clips are still "pending". Reject retries in that state too, or
+        # duplicate retry tasks can be queued for the same batch.
+        raise HTTPException(
+            status_code=409,
+            detail="Batch is already queued or rendering. Please wait until it finishes before retrying."
+        )
 
     req = BATCH_REQUESTS[batch_id]
     if body and body.cookies:
@@ -183,6 +188,158 @@ async def get_render_progress(batch_id: str):
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         }
+    )
+
+
+@router.post("/api/save-rendered-clip")
+async def save_client_rendered_clip(
+    file: UploadFile = File(...),
+    title: str = Form("clip"),
+):
+    """Persist a browser-rendered MP4 so Android can download it over HTTP(S)."""
+    if not file.filename or not file.filename.lower().endswith(".mp4"):
+        raise HTTPException(status_code=400, detail="Only MP4 rendered clips can be saved")
+
+    clean_title = re.sub(r'[\\/*?:"<>|]', "", (title or "clip").strip()) or "clip"
+    clean_title = clean_title[:100]
+    unique_name = f"client_{uuid.uuid4().hex[:12]}_{clean_title}.mp4"
+    final_path = EXPORTS_DIR / unique_name
+    temp_path = EXPORTS_DIR / f".{unique_name}.part"
+    max_upload_bytes = 2 * 1024 * 1024 * 1024
+    total_bytes = 0
+
+    EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(temp_path, "wb") as output:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total_bytes += len(chunk)
+                if total_bytes > max_upload_bytes:
+                    raise HTTPException(status_code=413, detail="Rendered MP4 exceeds the 2 GB upload limit")
+                output.write(chunk)
+
+        if total_bytes < 1024:
+            raise HTTPException(status_code=400, detail="Rendered MP4 is empty or incomplete")
+
+        temp_path.replace(final_path)
+        if not is_valid_mp4(final_path):
+            final_path.unlink(missing_ok=True)
+            raise HTTPException(status_code=400, detail="Uploaded file is not a valid MP4")
+
+        return {
+            "success": True,
+            "filename": f"{clean_title}.mp4",
+            "size_bytes": total_bytes,
+            "download_url": f"/api/download-rendered/{unique_name}?title={quote(clean_title)}",
+        }
+    except HTTPException:
+        temp_path.unlink(missing_ok=True)
+        raise
+    except Exception as error:
+        temp_path.unlink(missing_ok=True)
+        final_path.unlink(missing_ok=True)
+        logger.error(f"Failed to persist client-rendered MP4: {error}")
+        raise HTTPException(status_code=500, detail="Failed to save rendered MP4")
+    finally:
+        await file.close()
+
+
+@router.post("/api/save-client-download")
+async def save_client_download(
+    file: UploadFile = File(...),
+    title: str = Form("download"),
+):
+    """Persist a browser Blob so Android can download it through HTTP(S)."""
+    original_name = os.path.basename(file.filename or "")
+    extension = os.path.splitext(original_name)[1].lower()
+    allowed_types = {
+        ".mp4": "video/mp4",
+        ".mov": "video/quicktime",
+        ".mkv": "video/x-matroska",
+        ".webm": "video/webm",
+        ".avi": "video/x-msvideo",
+        ".m4v": "video/x-m4v",
+        ".flv": "video/x-flv",
+        ".wmv": "video/x-ms-wmv",
+        ".wav": "audio/wav",
+        ".mp3": "audio/mpeg",
+        ".m4a": "audio/mp4",
+        ".ogg": "audio/ogg",
+        ".aac": "audio/aac",
+        ".flac": "audio/flac",
+    }
+    if extension not in allowed_types:
+        raise HTTPException(status_code=400, detail="Unsupported download file type")
+
+    clean_title = re.sub(r'[\\/*?:"<>|]', "", (title or "download").strip()) or "download"
+    clean_title = clean_title[:100]
+    unique_name = f"client_{uuid.uuid4().hex[:12]}_{clean_title}{extension}"
+    final_path = EXPORTS_DIR / unique_name
+    temp_path = EXPORTS_DIR / f".{unique_name}.part"
+    max_upload_bytes = 2 * 1024 * 1024 * 1024
+    total_bytes = 0
+
+    EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(temp_path, "wb") as output:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total_bytes += len(chunk)
+                if total_bytes > max_upload_bytes:
+                    raise HTTPException(status_code=413, detail="Download file exceeds the 2 GB upload limit")
+                output.write(chunk)
+
+        if total_bytes < 1:
+            raise HTTPException(status_code=400, detail="Download file is empty")
+
+        temp_path.replace(final_path)
+        if extension == ".mp4" and not is_valid_mp4(final_path):
+            final_path.unlink(missing_ok=True)
+            raise HTTPException(status_code=400, detail="Uploaded file is not a valid MP4")
+
+        return {
+            "success": True,
+            "filename": f"{clean_title}{extension}",
+            "size_bytes": total_bytes,
+            "download_url": f"/api/download-client-file/{unique_name}?title={quote(clean_title)}",
+        }
+    except HTTPException:
+        temp_path.unlink(missing_ok=True)
+        raise
+    except Exception as error:
+        temp_path.unlink(missing_ok=True)
+        final_path.unlink(missing_ok=True)
+        logger.error(f"Failed to persist client download file: {error}")
+        raise HTTPException(status_code=500, detail="Failed to save download file")
+    finally:
+        await file.close()
+
+
+@router.get("/api/download-client-file/{file_name}")
+def download_client_file(file_name: str, title: Optional[str] = None):
+    safe_name = os.path.basename(file_name)
+    file_path = EXPORTS_DIR / safe_name
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Download file not found")
+
+    extension = os.path.splitext(safe_name)[1].lower()
+    media_types = {
+        ".mp4": "video/mp4", ".mov": "video/quicktime", ".mkv": "video/x-matroska",
+        ".webm": "video/webm", ".avi": "video/x-msvideo", ".m4v": "video/x-m4v",
+        ".flv": "video/x-flv", ".wmv": "video/x-ms-wmv", ".wav": "audio/wav",
+        ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".ogg": "audio/ogg",
+        ".aac": "audio/aac", ".flac": "audio/flac",
+    }
+    clean_title = re.sub(r'[\\/*?:"<>|]', "", (title or "").strip()) if title else ""
+    download_name = f"{clean_title}{extension}" if clean_title else safe_name
+    return FileResponse(
+        file_path,
+        media_type=media_types.get(extension, "application/octet-stream"),
+        filename=download_name,
     )
 
 

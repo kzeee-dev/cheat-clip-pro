@@ -51,6 +51,57 @@ def clear_temp_files() -> dict:
     cleared_files = 0
     cleared_bytes = 0
 
+    # Manual cleanup must obey the same active-job safety rule as auto-cleanup.
+    try:
+        from backend.services.download_service import raw_download_jobs, raw_clip_download_jobs
+        from backend.services.render_service import RENDER_BATCHES
+
+        active_states = {"starting", "running", "downloading", "transcribing", "rendering"}
+        active_downloads = any(
+            job.get("status") in active_states
+            for registry in (raw_download_jobs, raw_clip_download_jobs)
+            for job in registry.values()
+        )
+        active_renders = any(
+            batch.get("overall_status") == "running"
+            for batch in RENDER_BATCHES.values()
+        )
+        if active_downloads or active_renders:
+            logger.info("[Manual-Cleanup] Skipped: active download/render jobs detected.")
+            return {
+                "success": True,
+                "skipped": True,
+                "reason": "active_media_jobs",
+                "cleared_files": 0,
+                "cleared_bytes": 0,
+                "cleared_mb": 0.0,
+                "cookies_preserved": True,
+                "has_cookies": False,
+                "message": "Cleanup skipped because downloads or rendering are still active.",
+            }
+    except Exception as exc:
+        logger.warning(f"[Manual-Cleanup] Skipped because active-job safety check failed: {exc}")
+        return {
+            "success": False,
+            "skipped": True,
+            "reason": "active_job_check_failed",
+            "cleared_files": 0,
+            "cleared_bytes": 0,
+            "cleared_mb": 0.0,
+            "cookies_preserved": True,
+            "has_cookies": False,
+            "message": "Cleanup skipped because active job status could not be verified.",
+        }
+
+    uploads_root = UPLOADS_DIR.resolve()
+
+    def is_upload_path(p: Path) -> bool:
+        try:
+            resolved = p.resolve()
+            return resolved == uploads_root or uploads_root in resolved.parents
+        except Exception:
+            return True
+
     PROTECTED_COOKIE_NAMES = {"cookies.txt", ".cookies", "youtube_cookies.txt", "cookie.txt"}
 
     def is_protected_cookie(p: Path) -> bool:
@@ -71,7 +122,8 @@ def clear_temp_files() -> dict:
                     if is_protected_cookie(item):
                         logger.info(f"Preserving protected cookie file: {item}")
                         continue
-                    if item.name == "uploads":
+                    if is_upload_path(item) or uploads_root in item.resolve().parents:
+                        logger.info(f"Preserving user upload data: {item}")
                         continue
 
                     if item.is_file() or item.is_symlink():
@@ -86,6 +138,10 @@ def clear_temp_files() -> dict:
                                 has_cookie = True
                                 logger.info(f"Preserving protected cookie file inside folder: {sub}")
                                 continue
+                            if is_upload_path(sub):
+                                has_cookie = True
+                                logger.info(f"Preserving user upload data inside folder: {sub}")
+                                continue
                             if sub.is_file() or sub.is_symlink():
                                 try:
                                     cleared_files += 1
@@ -93,7 +149,7 @@ def clear_temp_files() -> dict:
                                     sub.unlink()
                                 except Exception:
                                     pass
-                        if not has_cookie:
+                        if not has_cookie and not (uploads_root == item.resolve() or uploads_root in item.resolve().parents):
                             shutil.rmtree(item, ignore_errors=True)
                 except Exception as e:
                     logger.warning(f"Could not delete temp item {item}: {e}")
@@ -156,16 +212,84 @@ def auto_cleanup_expired_files(
 ) -> dict:
     """
     Automated dual-mode cleanup engine:
-    1. Option 1 (Time-based TTL): Deletes temp/export/upload files older than max_age_seconds (default 1 hour).
+    1. Option 1 (Time-based TTL): Deletes disposable temporary files older than max_age_seconds (default 1 hour).
     2. Option 2 (Storage Quota Ceiling): If total storage exceeds max_storage_bytes (default 5 GB),
        purges oldest files first (FIFO by mtime) down to target_reduction_ratio (default 80% = 4 GB).
     Strictly preserves cookies and custom fonts.
     """
     import time
     base_dir = Path(_base_dir)
-    from backend.config import EXPORTS_DIR, TEMP_DIR, UPLOADS_DIR
+    from backend.config import TEMP_DIR, UPLOADS_DIR
 
-    target_dirs = [TEMP_DIR, base_dir / "temp", UPLOADS_DIR, EXPORTS_DIR]
+    # Never clean while a media job may still be reading or writing files.
+    # Lazy imports avoid module-import cycles.
+    try:
+        from backend.services.download_service import raw_download_jobs, raw_clip_download_jobs
+        from backend.services.render_service import RENDER_BATCHES
+
+        active_states = {"starting", "running", "downloading", "transcribing", "rendering"}
+        active_downloads = any(
+            job.get("status") in active_states
+            for registry in (raw_download_jobs, raw_clip_download_jobs)
+            for job in registry.values()
+        )
+        active_renders = any(
+            batch.get("overall_status") == "running"
+            for batch in RENDER_BATCHES.values()
+        )
+        if active_downloads or active_renders:
+            logger.info("[Auto-Cleanup] Skipped: active download/render jobs detected.")
+            return {
+                "success": True,
+                "skipped": True,
+                "reason": "active_media_jobs",
+                "ttl_deleted_files": 0,
+                "ttl_deleted_bytes": 0,
+                "quota_deleted_files": 0,
+                "quota_deleted_bytes": 0,
+                "total_cleaned_files": 0,
+                "total_cleaned_bytes": 0,
+                "total_cleaned_mb": 0.0,
+                "remaining_storage_bytes": 0,
+                "remaining_storage_mb": 0.0,
+                "max_age_seconds": max_age_seconds,
+                "max_storage_bytes": max_storage_bytes,
+            }
+    except Exception as exc:
+        # Fail closed: never risk deleting media if job state is unavailable.
+        logger.warning(f"[Auto-Cleanup] Skipped because active-job safety check failed: {exc}")
+        return {
+            "success": False,
+            "skipped": True,
+            "reason": "active_job_check_failed",
+            "ttl_deleted_files": 0,
+            "ttl_deleted_bytes": 0,
+            "quota_deleted_files": 0,
+            "quota_deleted_bytes": 0,
+            "total_cleaned_files": 0,
+            "total_cleaned_bytes": 0,
+            "total_cleaned_mb": 0.0,
+            "remaining_storage_bytes": 0,
+            "remaining_storage_mb": 0.0,
+            "max_age_seconds": max_age_seconds,
+            "max_storage_bytes": max_storage_bytes,
+        }
+
+    # Only disposable temporary directories are eligible for automatic deletion.
+    # Completed exports and user uploads are intentionally excluded.
+    target_dirs = [TEMP_DIR, base_dir / "temp"]
+
+    uploads_root = UPLOADS_DIR.resolve()
+
+    def is_disposable_file(item: Path) -> bool:
+        try:
+            resolved = item.resolve()
+            if resolved == uploads_root or uploads_root in resolved.parents:
+                return False
+            return not is_protected_system_file(item)
+        except Exception:
+            # Fail closed when a path cannot be safely resolved.
+            return False
     now = time.time()
     cutoff_time = now - max_age_seconds
 
@@ -179,7 +303,7 @@ def auto_cleanup_expired_files(
         if not target.exists() or not target.is_dir():
             continue
         for item in list(target.rglob("*")):
-            if item.is_file() and not is_protected_system_file(item):
+            if item.is_file() and is_disposable_file(item):
                 try:
                     mtime = item.stat().st_mtime
                     if mtime < cutoff_time:
@@ -198,7 +322,7 @@ def auto_cleanup_expired_files(
         if not target.exists() or not target.is_dir():
             continue
         for item in list(target.rglob("*")):
-            if item.is_file() and not is_protected_system_file(item):
+            if item.is_file() and is_disposable_file(item):
                 try:
                     stat = item.stat()
                     total_current_bytes += stat.st_size
@@ -208,7 +332,7 @@ def auto_cleanup_expired_files(
 
     if total_current_bytes > max_storage_bytes:
         logger.warning(
-            f"[Auto-Cleanup] Total temp storage ({round(total_current_bytes / (1024**3), 2)} GB) "
+            f"[Auto-Cleanup] Total disposable temp storage ({round(total_current_bytes / (1024**3), 2)} GB) "
             f"exceeds quota ceiling ({round(max_storage_bytes / (1024**3), 2)} GB). Triggering FIFO quota purge."
         )
         target_ceiling = int(max_storage_bytes * target_reduction_ratio)
@@ -230,7 +354,14 @@ def auto_cleanup_expired_files(
     for target in target_dirs:
         if target.exists() and target.is_dir():
             for item in sorted(list(target.rglob("*")), key=lambda p: len(p.parts), reverse=True):
-                if item.is_dir() and item != target and item.name != "frames" and not is_protected_system_file(item):
+                if (
+                    item.is_dir()
+                    and item != target
+                    and item.name != "frames"
+                    and item.resolve() != uploads_root
+                    and uploads_root not in item.resolve().parents
+                    and not is_protected_system_file(item)
+                ):
                     try:
                         if not any(item.iterdir()):
                             item.rmdir()
