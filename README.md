@@ -1,4 +1,4 @@
-# Cheat Clip Pro
+# Cheat Clip Pro by Galih Johansa Juan Saputra versi android by kzee-dev
 
 **Cheat Clip Pro** adalah aplikasi untuk membantu mengambil bagian video, menyusun klip pendek, melakukan render, menambahkan subtitle, melihat pratinjau, dan mengunduh hasil render maupun paket ZIP.
 
