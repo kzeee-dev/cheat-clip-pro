@@ -1161,13 +1161,23 @@ async def analyze_video(request: AnalyzeRequest):
                                     "message": f"Whisper transcribed {len(transcript_lines)} lines parsed successfully ({w_check['name']})."
                                 })
                             else:
-                                msg = e.detail if isinstance(e, HTTPException) else str(e)
-                                yield _sse({"error": f"Speech transcription failed: {msg}", "status": 400})
-                                return
+                                logger.warning("Whisper returned no transcript for YouTube video; continuing without dialogue.")
+                                transcript_lines = []
+                                yield _sse({
+                                    "step": 3, "step_progress": 100, "overall_progress": 70,
+                                    "stage": "Transcript Unavailable — Continuing",
+                                    "detail": "Subtitles and speech transcription are unavailable. Continuing with video metadata and heatmap only.",
+                                    "message": "No transcript available — continuing analysis with available video signals."
+                                })
                         else:
-                            msg = e.detail if isinstance(e, HTTPException) else str(e)
-                            yield _sse({"error": msg, "status": 400})
-                            return
+                            logger.warning(f"YouTube audio unavailable for Whisper fallback: {e}")
+                            transcript_lines = []
+                            yield _sse({
+                                "step": 3, "step_progress": 100, "overall_progress": 70,
+                                "stage": "Transcript Unavailable — Continuing",
+                                "detail": "Subtitles and audio download are unavailable. Continuing with video metadata and heatmap only.",
+                                "message": "No transcript available — continuing analysis with available video signals."
+                            })
 
         # Estimate duration from transcript if missing
         if duration == 0.0 and transcript_lines:
@@ -1175,6 +1185,7 @@ async def analyze_video(request: AnalyzeRequest):
             duration = last.get("start", 0.0) + last.get("duration", 0.0)
 
         # Slice transcript based on custom search range if provided
+        had_transcript_before_range = bool(transcript_lines)
         start_bound = 0.0
         end_bound = duration
         if request.range_start is not None or request.range_end is not None:
@@ -1198,10 +1209,10 @@ async def analyze_video(request: AnalyzeRequest):
                     filtered_lines.append(line)
             
             transcript_lines = filtered_lines
-            if not transcript_lines:
+            if not transcript_lines and had_transcript_before_range:
                 yield _sse({"error": f"No subtitles found in the specified range {start_bound}s to {end_bound}s.", "status": 400})
                 return
-            
+
             duration = end_bound - start_bound
             logger.info(f"Filtered transcript to custom range: {start_bound}s to {end_bound}s (duration: {duration}s)")
 
@@ -1338,7 +1349,17 @@ async def analyze_video(request: AnalyzeRequest):
             )
 
         # ── Step 4: Build prompt & Detect Language ─────────────────────────────
-        detected_lang = detect_transcript_language(enriched_transcript, title)
+        has_transcript = bool(enriched_transcript)
+        detected_lang = (
+            detect_transcript_language(enriched_transcript, title)
+            if has_transcript
+            else {
+                "code": expected_video_lang if expected_video_lang in ("id", "en") else "id",
+                "name": "English" if expected_video_lang == "en" else "Indonesian (Bahasa Indonesia)",
+                "confidence": 0.0,
+                "is_supported": True
+            }
+        )
         if not detected_lang.get('is_supported', True):
             yield _sse({
                 "error": (
@@ -1371,6 +1392,15 @@ async def analyze_video(request: AnalyzeRequest):
             transcript_dump = transcript_dump[:MAX_LINES]
 
         transcript_text = "\n".join(transcript_dump)
+        no_transcript_instruction = (
+            "NO TRANSCRIPT IS AVAILABLE. Do NOT infer or invent spoken dialogue, quotations, speaker names, "
+            "claims, jokes, or exact narrative events. Use ONLY the supplied title, channel, duration, and "
+            "available heatmap/audio-energy data. Treat heatmap peaks as approximate activity signals, not "
+            "proof of audience retention or specific content. If evidence is insufficient for a meaningful "
+            "clip, return an empty clips array and explain this limitation in the summary. Set key_quotes to []. "
+            "Choose timestamps only from the video duration and available signal ranges."
+            if not has_transcript else ""
+        )
 
         is_auto_duration = str(request.duration).lower() == "auto"
         if is_auto_duration:
@@ -1419,7 +1449,8 @@ async def analyze_video(request: AnalyzeRequest):
 
         prompt = (
             f"You are an expert viral video clip editor finding top clip candidates for TikTok, Instagram Reels, and YouTube Shorts.\n"
-            f"Analyze this YouTube video transcript and find {clip_range} high-performing, standalone clip candidates.\n\n"
+            f"{'Analyze the available video metadata and engagement signals' if not has_transcript else 'Analyze this YouTube video transcript'} and find {clip_range} high-performing, standalone clip candidates.\n"
+            f"{no_transcript_instruction}\n\n"
             f"VIDEO CONTEXT:\n"
             f"- Video Title: {title}\n"
             f"{channel_context}"
@@ -1443,7 +1474,7 @@ async def analyze_video(request: AnalyzeRequest):
             f"   - `title_suggestion`: Alternative title in {lang_name.upper()}.\n"
             f"   - `caption_suggestion`: Engaging social caption in {lang_name.upper()}.\n"
             f"   - `hashtag_suggestion`: Relevant hashtags in {lang_name.upper()}.\n"
-            f"   - `key_quotes`: MUST be verbatim spoken quotes directly from the transcript in {lang_name.upper()}.\n"
+            f"   - `key_quotes`: {'MUST be an empty array because no transcript is available.' if not has_transcript else f'MUST be verbatim spoken quotes directly from the transcript in {lang_name.upper()}.'}\n"
             f"================================================================================\n\n"
             f"{duration_instruction}\n\n"
             f"{clip_count_instruction}\n\n"
