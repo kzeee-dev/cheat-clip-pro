@@ -1414,7 +1414,7 @@ async def analyze_video(request: AnalyzeRequest):
             duration_instruction = (
                 "DYNAMIC AUTO CLIP DURATION GUIDELINES:\n"
                 "- STRICT MINIMUM DURATION: Every clip MUST be at least 18-20 seconds long. NEVER create micro-clips of 2, 3, 5, or 8 seconds! A 3-second clip is completely useless as a standalone Short/Reel/TikTok.\n"
-                "- Intelligently adjust the duration of each individual clip based on its natural narrative flow and context so that the setup, premise, context, punchline, and resolution are fully included.\n"
+                "- Intelligently adjust the duration of each individual clip based on its natural narrative flow and context so the visible sequence has enough setup and payoff.\n"
                 "- Generate variant clip durations naturally: ranging flexibly from approximately 20 seconds up to around 90 seconds (1 minute 30 seconds maximum). Do NOT force all clips to be the exact same length (some can be ~25-35s, some ~45-60s, and deeper discussions or stories up to around 90s).\n"
                 "- Strict maximum constraint: No clip should ever exceed 90 seconds (1 minute 30 seconds). Always ensure clips begin and end cleanly at complete sentence boundaries without mid-word or mid-sentence cuts."
             )
@@ -1431,7 +1431,7 @@ async def analyze_video(request: AnalyzeRequest):
             duration_instruction = (
                 f"STRICT CLIP DURATION REQUIREMENTS (Target: {preset_info['target']}):\n"
                 f"- ABSOLUTE MINIMUM DURATION: No clip may be shorter than {int(min_target_duration)} seconds! NEVER return tiny snippets or 3-second soundbites.\n"
-                f"- Include sufficient context: Ensure every clip contains the full setup, premise, conversation/gameplay context, and conclusion so it functions as a complete, engaging standalone video.\n"
+                f"- Include sufficient context: Ensure every clip contains enough visible setup, context, and payoff to function as a complete, engaging standalone video.\n"
                 f"- Target duration range: {preset_info['target']}. Keep the clip length strictly around this window."
             )
 
@@ -1505,7 +1505,7 @@ async def analyze_video(request: AnalyzeRequest):
             f"{'Use the labelled frame timestamps as evidence anchors; choose a plausible continuous clip window within the video range. Do not claim exact scene boundaries from sparse samples.' if not has_transcript else 'Rules: use exact seconds from transcript; clips must start/end at sentence boundaries; do not overlap.'}\n"
             f"VIRAL INTELLIGENCE SCORING (MANDATORY, EVIDENCE-BASED):\n"
             f"Score each candidate across five dimensions from 0 to 100:\n"
-            f"- hook_strength: immediate curiosity, surprising claim, strong question, conflict, or compelling opening. Judge the actual first seconds, not a hypothetical rewritten hook.\n"
+            f"- hook_strength: {'an immediately striking, unusual, or visually clear action supported by the sampled frames.' if not has_transcript else 'immediate curiosity, surprising claim, strong question, conflict, or compelling opening. Judge the actual first seconds, not a hypothetical rewritten hook.'}\n"
             f"- emotional_impact: {'observable emotion, surprise, tension, humor, or visual payoff supported by the supplied frames.' if not has_transcript else 'observable humor, surprise, tension, empathy, inspiration, or other emotional response in the transcript.'}\n"
             f"- standalone_value: whether the clip has enough visible setup, context, and payoff to make sense without the full video. Penalize missing context.\n"
             f"- clarity: {'how clearly the visible action or visual story can be understood.' if not has_transcript else 'how clearly and specifically the main idea is communicated.'}\n"
@@ -1597,12 +1597,12 @@ async def analyze_video(request: AnalyzeRequest):
 
             if visual_frame_parts:
                 prompt += (
-                    "\\n\\nVISUAL EVIDENCE ATTACHED: Analyze the timestamp-labelled images above. "
+                    "\n\nVISUAL EVIDENCE ATTACHED: Analyze the timestamp-labelled images above. "
                     "Do not use outside knowledge or infer unseen events."
                 )
             else:
                 prompt += (
-                    "\\n\\nNO USABLE VIDEO FRAMES WERE EXTRACTED. No transcript is available either. "
+                    "\n\nNO USABLE VIDEO FRAMES WERE EXTRACTED. No transcript is available either. "
                     "Return an empty clips array and state that reliable visual evidence could not be obtained. "
                     "Do not create candidate timestamps or describe scenes."
                 )
