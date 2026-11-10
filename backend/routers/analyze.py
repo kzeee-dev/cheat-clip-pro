@@ -1649,7 +1649,7 @@ async def analyze_video(request: AnalyzeRequest):
 
             for idx, model_name in enumerate(models_to_try):
                 next_model_hint = models_to_try[idx + 1] if idx + 1 < len(models_to_try) else None
-                MAX_RETRIES = 1
+                MAX_RETRIES = 2
                 MODEL_TIMEOUT_SEC = 120.0  # 120s best-practice timeout for comprehensive video analysis
                 
                 for attempt in range(MAX_RETRIES):
@@ -1818,7 +1818,7 @@ async def analyze_video(request: AnalyzeRequest):
                         if any(x in err_str for x in ('404', 'not found', 'not supported')):
                             break
                         
-                        is_server_busy = any(x in err_str for x in ('503', 'unavailable', 'overloaded', '500', 'internal'))
+                        is_server_busy = any(x in err_str for x in ('504', 'deadline_exceeded', 'deadline expired', 'gateway timeout', 'timeout', '503', 'unavailable', 'overloaded', '500', 'internal'))
                         if not is_server_busy:
                             break
                 
@@ -1840,43 +1840,69 @@ async def analyze_video(request: AnalyzeRequest):
                     })
 
         if analysis_data is None:
-            # If any model in the fallback chain suffered quota exhaustion, prioritize showing the quota explanation
             error_to_report = encountered_quota_error or last_error
-            if error_to_report is not None:
-                err_str = str(error_to_report).lower()
-                if any(x in err_str for x in ('429', 'quota', 'resource exhausted', 'rate limit')):
-                    yield _sse({
-                        "error": "Quota limit reached across all available Gemini Flash models for this API key. Free keys have a request limit per minute. Please change your API key, generate a fresh free key at aistudio.google.com, or wait 30–60 seconds before trying again.",
-                        "status": 429
-                    })
-                elif any(x in err_str for x in ('503', 'unavailable', 'overloaded')):
-                    yield _sse({
-                        "error": "Google Gemini servers are currently experiencing high demand across all Flash models. Please change to a different Gemini API key or wait a few moments and try again.",
-                        "status": 503
-                    })
-                elif any(x in err_str for x in ('401', '403', 'api_key', 'invalid', 'permission')):
-                    yield _sse({
-                        "error": "Invalid or restricted Gemini API key. Please change your API key or generate a new free key at aistudio.google.com.",
-                        "status": 401
-                    })
-                elif any(x in err_str for x in ('404', 'not found', 'not supported')):
-                    models_preview = ', '.join(models_to_try[:3])
-                    yield _sse({
-                        "error": f"All tested Gemini Flash models ({models_preview}...) were unavailable or not supported for this API key. Please change your Gemini API key or generate a new one at aistudio.google.com.",
-                        "status": 404
-                    })
+            if enriched_transcript:
+                # Keep useful recommendations flowing when Gemini is temporarily unavailable.
+                # The deterministic fallback below selects real transcript segments and heatmap peaks;
+                # it does not invent dialogue or pretend that AI scoring succeeded.
+                logger.warning(
+                    "Gemini analysis unavailable after fallback chain; "
+                    "continuing with transcript-based clip synthesis. Last error: %s",
+                    error_to_report or "no response",
+                )
+                yield _sse({
+                    "step": 4,
+                    "step_progress": 82,
+                    "overall_progress": 84,
+                    "stage": "Transcript-Based Clip Recovery",
+                    "detail": "AI models did not respond. Building conservative clip candidates from available transcript and audio activity signals...",
+                    "model": requested_model,
+                    "message": "Gemini is temporarily unavailable — recovering clip candidates from the transcript."
+                })
+                analysis_data = {"summary": "", "clips": []}
+                successful_model = "Transcript fallback (AI unavailable)"
+            else:
+                # Without transcript evidence, do not invent dialogue or semantic clip recommendations.
+                if error_to_report is not None:
+                    err_str = str(error_to_report).lower()
+                    if any(x in err_str for x in ('429', 'quota', 'resource exhausted', 'rate limit')):
+                        yield _sse({
+                            "error": "Gemini rate limit or quota reached and no transcript is available for local clip recovery. Please wait before trying again or use another API key.",
+                            "status": 429
+                        })
+                    elif any(x in err_str for x in ('504', 'deadline_exceeded', 'deadline expired', 'gateway timeout', 'timeout')):
+                        yield _sse({
+                            "error": "Gemini timed out across the available models and no transcript is available for reliable clip recovery. Please retry in a moment.",
+                            "status": 504
+                        })
+                    elif any(x in err_str for x in ('503', 'unavailable', 'overloaded')):
+                        yield _sse({
+                            "error": "Google Gemini servers are temporarily unavailable and no transcript is available for clip recovery. Please try again shortly.",
+                            "status": 503
+                        })
+                    elif any(x in err_str for x in ('401', '403', 'api_key', 'invalid', 'permission')):
+                        yield _sse({
+                            "error": "Invalid or restricted Gemini API key. Please check the key in AI Engine Settings.",
+                            "status": 401
+                        })
+                    elif any(x in err_str for x in ('404', 'not found', 'not supported')):
+                        models_preview = ', '.join(models_to_try[:3])
+                        yield _sse({
+                            "error": f"All tested Gemini Flash models ({models_preview}...) were unavailable or not supported for this API key.",
+                            "status": 404
+                        })
+                    else:
+                        logger.error(f"Gemini error after all fallback models: {error_to_report}")
+                        yield _sse({
+                            "error": f"AI analysis failed across all available Flash models ({str(error_to_report)}). No transcript was available for safe clip recovery.",
+                            "status": 500
+                        })
                 else:
-                    logger.error(f"Gemini error after all fallback models: {error_to_report}")
                     yield _sse({
-                        "error": f"AI analysis failed across all available Flash models ({str(error_to_report)}). Please change your Gemini API key or try again in a few moments.",
+                        "error": "No response received from available Gemini Flash models, and no transcript was available for safe clip recovery.",
                         "status": 500
                     })
-            else:
-                yield _sse({
-                    "error": "No response received after trying all available Gemini Flash models. Please change your Gemini API key or try again in a few moments.",
-                    "status": 500
-                })
-            return
+                return
 
         # Fallback clip synthesis if 0 clips were returned after all models
         if len(analysis_data.get('clips', [])) == 0 and enriched_transcript:
