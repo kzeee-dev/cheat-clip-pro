@@ -7,9 +7,11 @@ from google import genai
 
 from backend.config import logger
 
+DEPRECATED_FLASH_MODELS = {"gemini-2.5-flash-lite"}
+
 KNOWN_FLASH_MODELS = [
+    'gemini-3.5-flash-lite',
     'gemini-2.5-flash',
-    'gemini-2.5-flash-lite',
     'gemini-2.0-flash',
     'gemini-2.0-flash-lite',
     'gemini-1.5-flash',
@@ -49,6 +51,8 @@ def get_flash_models_for_key(client: genai.Client) -> List[str]:
             name = m.name or ""
             short_name = name.split('/')[-1]
             if "gemini" in short_name.lower() and "flash" in short_name.lower():
+                if short_name.lower() in DEPRECATED_FLASH_MODELS:
+                    continue
                 if m.supported_actions and "generateContent" not in m.supported_actions:
                     continue
                 # Exclude non-text, specialized, or non-generative tasks
@@ -73,8 +77,8 @@ def get_flash_models_for_key(client: genai.Client) -> List[str]:
 def list_available_gemini_models(api_key: str = "") -> List[str]:
     """Fetches list of available Gemini models using the user's API key, prioritizing Flash models (newest first)."""
     default_models = [
+        'gemini-3.5-flash-lite',
         'gemini-2.5-flash',
-        'gemini-2.5-flash-lite',
         'gemini-2.0-flash',
         'gemini-2.0-flash-lite',
         'gemini-1.5-flash',
@@ -98,6 +102,8 @@ def list_available_gemini_models(api_key: str = "") -> List[str]:
                     continue
                 
                 short_name = name.split('/')[-1]
+                if short_name.lower() in DEPRECATED_FLASH_MODELS:
+                    continue
                 exclude_keywords = [
                     'tuning', 'thinking', 'vision', 'image', 'tts',
                     'omni', 'customtools', 'embed', 'realtime', 'robotics'

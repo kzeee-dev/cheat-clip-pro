@@ -259,9 +259,10 @@ async def render_single_batch_clip(
             except Exception:
                 pass
 
-        if settings.caption_style != "none" or (display_title and settings.title_position != "none" and not skip_ass_title):
+        effective_caption_style = settings.caption_style if settings.subtitles_enabled is not False else "none"
+        if effective_caption_style != "none" or (display_title and settings.title_position != "none" and not skip_ass_title):
             words = []
-            if settings.caption_style != "none":
+            if effective_caption_style != "none":
                 words = await asyncio.to_thread(
                     transcribe_clip_words,
                     raw_path,
@@ -275,7 +276,7 @@ async def render_single_batch_clip(
             await asyncio.to_thread(
                 generate_ass_file,
                 words=words,
-                style_preset=settings.caption_style,
+                style_preset=effective_caption_style,
                 font_name=settings.caption_font or "Outfit",
                 output_ass_path=ass_path,
                 target_aspect_ratio=settings.aspect_ratio,
@@ -706,7 +707,8 @@ async def render_merged_batch_clips(
                     clip_index=0,
                 )
 
-        add_render_log(batch_id, "Merged: mulai transkripsi dan pembuatan subtitle", clip_index=0)
+        effective_caption_style = settings.caption_style if settings.subtitles_enabled is not False else "none"
+        add_render_log(batch_id, "Merged: subtitle OFF — melewati transkripsi subtitle" if effective_caption_style == "none" else "Merged: mulai transkripsi dan pembuatan subtitle", clip_index=0)
         # 3. Transcribe & generate time-shifted subtitles
         target_lang = None
         if transcript:
@@ -724,7 +726,7 @@ async def render_merged_batch_clips(
             s_t = float(seg.get("start_time", 0.0))
             e_t = float(seg.get("end_time", s_t + 30.0))
             seg_dur = max(0.1, e_t - s_t)
-            if settings.caption_style != "none":
+            if effective_caption_style != "none":
                 seg_words = await asyncio.to_thread(
                     transcribe_clip_words,
                     part_paths[i],
@@ -779,13 +781,13 @@ async def render_merged_batch_clips(
                 logger.warning(f"Could not render color emoji title overlay for merged clip: {ex}")
                 skip_ass_title = False
 
-        if settings.caption_style != "none" or (display_title and settings.title_position != "none" and not skip_ass_title):
+        if effective_caption_style != "none" or (display_title and settings.title_position != "none" and not skip_ass_title):
             ass_filename = f"{batch_id}_merged.ass"
             ass_path = str(TEMP_DIR / ass_filename)
             await asyncio.to_thread(
                 generate_ass_file,
                 words=merged_words,
-                style_preset=settings.caption_style,
+                style_preset=effective_caption_style,
                 font_name=settings.caption_font or "Outfit",
                 output_ass_path=ass_path,
                 target_aspect_ratio=settings.aspect_ratio,

@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -15,6 +16,7 @@ from backend.config import (
     TEMP_DIR,
     UPLOADS_DIR,
     compute_audio_energy_heatmap,
+    extract_clip_frame,
     get_video_file_metadata,
     logger,
     transcribe_local_video_file,
@@ -447,35 +449,45 @@ async def analyze_video(request: AnalyzeRequest):
 
             logger.info(f"Local video loaded: title='{title}', duration={duration}s, path={uploaded_file_path}")
 
-            # ── Step 2: Heatmap via acoustic energy ──────────────────────────
-            yield _sse({
-                "step": 2,
-                "step_progress": 40,
-                "overall_progress": 35,
-                "stage": "Computing Acoustic Heatmap",
-                "detail": "Analyzing audio energy envelope & speech intensity peaks...",
-                "message": "Computing audio engagement curve..."
-            })
-            try:
-                heatmap = await asyncio.to_thread(compute_audio_energy_heatmap, uploaded_file_path, duration)
-                yield _sse({
-                    "step": 2,
-                    "step_progress": 100,
-                    "overall_progress": 50,
-                    "stage": "Acoustic Peaks Decoded",
-                    "detail": f"Acoustic engagement heatmap parsed — {len(heatmap)} audience interest data points generated.",
-                    "message": f"Acoustic energy heatmap loaded ({len(heatmap)} points)."
-                })
-            except Exception as e:
-                logger.warning(f"Heatmap calculation error: {e}")
+            if request.subtitle_enabled:
+                            # ── Step 2: Heatmap via acoustic energy ──────────────────────────
+                            yield _sse({
+                                "step": 2,
+                                "step_progress": 40,
+                                "overall_progress": 35,
+                                "stage": "Computing Acoustic Heatmap",
+                                "detail": "Analyzing audio energy envelope & speech intensity peaks...",
+                                "message": "Computing audio engagement curve..."
+                            })
+                            try:
+                                heatmap = await asyncio.to_thread(compute_audio_energy_heatmap, uploaded_file_path, duration)
+                                yield _sse({
+                                    "step": 2,
+                                    "step_progress": 100,
+                                    "overall_progress": 50,
+                                    "stage": "Acoustic Peaks Decoded",
+                                    "detail": f"Acoustic engagement heatmap parsed — {len(heatmap)} audience interest data points generated.",
+                                    "message": f"Acoustic energy heatmap loaded ({len(heatmap)} points)."
+                                })
+                            except Exception as e:
+                                logger.warning(f"Heatmap calculation error: {e}")
+                                heatmap = []
+                                yield _sse({
+                                    "step": 2,
+                                    "step_progress": 100,
+                                    "overall_progress": 50,
+                                    "stage": "Dialogue Fallback",
+                                    "detail": "Proceeding with full dialogue transcript analysis.",
+                                    "message": "Proceeding with speech transcription..."
+                                })
+
+            else:
                 heatmap = []
                 yield _sse({
-                    "step": 2,
-                    "step_progress": 100,
-                    "overall_progress": 50,
-                    "stage": "Dialogue Fallback",
-                    "detail": "Proceeding with full dialogue transcript analysis.",
-                    "message": "Proceeding with speech transcription..."
+                    "step": 2, "step_progress": 100, "overall_progress": 50,
+                    "stage": "Visual-Only Mode",
+                    "detail": "Subtitle OFF — skipping audio analysis and acoustic heatmap.",
+                    "message": "Audio analysis skipped; continuing with visual analysis."
                 })
 
             # ── Step 3: Speech Recognition via Whisper AI ───────────────────
@@ -486,7 +498,15 @@ async def analyze_video(request: AnalyzeRequest):
             elif req_lang == "en":
                 expected_video_lang = "en"
 
-            if request.subtitles:
+            if not request.subtitle_enabled:
+                transcript_lines = []
+                yield _sse({
+                "step": 3, "step_progress": 100, "overall_progress": 70,
+                "stage": "Visual-Only Mode",
+                "detail": "Subtitle OFF — skipping subtitle retrieval, audio download, and Whisper transcription.",
+                "message": "Subtitle and audio processing skipped — continuing with visual analysis."
+                })
+            elif request.subtitles:
                 yield _sse({
                     "step": 3,
                     "step_progress": 30,
@@ -664,7 +684,15 @@ async def analyze_video(request: AnalyzeRequest):
             })
 
             # ── Step 3: Transcription (Whisper AI or Manual) ────────────────
-            if request.subtitles:
+            if not request.subtitle_enabled:
+                transcript_lines = []
+                yield _sse({
+                "step": 3, "step_progress": 100, "overall_progress": 70,
+                "stage": "Visual-Only Mode",
+                "detail": "Subtitle OFF — skipping subtitle retrieval, audio download, and Whisper transcription.",
+                "message": "Subtitle and audio processing skipped — continuing with visual analysis."
+                })
+            elif request.subtitles:
                 yield _sse({
                     "step": 3,
                     "step_progress": 30,
@@ -910,7 +938,15 @@ async def analyze_video(request: AnalyzeRequest):
                 })
 
             # ── Step 3: Transcript ───────────────────────────────────────────────
-            if request.subtitles:
+            if not request.subtitle_enabled:
+                transcript_lines = []
+                yield _sse({
+                "step": 3, "step_progress": 100, "overall_progress": 70,
+                "stage": "Visual-Only Mode",
+                "detail": "Subtitle OFF — skipping subtitle retrieval, audio download, and Whisper transcription.",
+                "message": "Subtitle and audio processing skipped — continuing with visual analysis."
+                })
+            elif request.subtitles:
                 yield _sse({
                     "step": 3,
                     "step_progress": 30,
@@ -1161,13 +1197,23 @@ async def analyze_video(request: AnalyzeRequest):
                                     "message": f"Whisper transcribed {len(transcript_lines)} lines parsed successfully ({w_check['name']})."
                                 })
                             else:
-                                msg = e.detail if isinstance(e, HTTPException) else str(e)
-                                yield _sse({"error": f"Speech transcription failed: {msg}", "status": 400})
-                                return
+                                logger.warning("Whisper returned no transcript for YouTube video; continuing without dialogue.")
+                                transcript_lines = []
+                                yield _sse({
+                                    "step": 3, "step_progress": 100, "overall_progress": 70,
+                                    "stage": "Transcript Unavailable — Continuing",
+                                    "detail": "Subtitles and speech transcription are unavailable. Continuing with video metadata and heatmap only.",
+                                    "message": "No transcript available — continuing analysis with available video signals."
+                                })
                         else:
-                            msg = e.detail if isinstance(e, HTTPException) else str(e)
-                            yield _sse({"error": msg, "status": 400})
-                            return
+                            logger.warning(f"YouTube audio unavailable for Whisper fallback: {e}")
+                            transcript_lines = []
+                            yield _sse({
+                                "step": 3, "step_progress": 100, "overall_progress": 70,
+                                "stage": "Transcript Unavailable — Continuing",
+                                "detail": "Subtitles and audio download are unavailable. Continuing with video metadata and heatmap only.",
+                                "message": "No transcript available — continuing analysis with available video signals."
+                            })
 
         # Estimate duration from transcript if missing
         if duration == 0.0 and transcript_lines:
@@ -1175,6 +1221,7 @@ async def analyze_video(request: AnalyzeRequest):
             duration = last.get("start", 0.0) + last.get("duration", 0.0)
 
         # Slice transcript based on custom search range if provided
+        had_transcript_before_range = bool(transcript_lines)
         start_bound = 0.0
         end_bound = duration
         if request.range_start is not None or request.range_end is not None:
@@ -1198,10 +1245,10 @@ async def analyze_video(request: AnalyzeRequest):
                     filtered_lines.append(line)
             
             transcript_lines = filtered_lines
-            if not transcript_lines:
+            if not transcript_lines and had_transcript_before_range:
                 yield _sse({"error": f"No subtitles found in the specified range {start_bound}s to {end_bound}s.", "status": 400})
                 return
-            
+
             duration = end_bound - start_bound
             logger.info(f"Filtered transcript to custom range: {start_bound}s to {end_bound}s (duration: {duration}s)")
 
@@ -1338,7 +1385,17 @@ async def analyze_video(request: AnalyzeRequest):
             )
 
         # ── Step 4: Build prompt & Detect Language ─────────────────────────────
-        detected_lang = detect_transcript_language(enriched_transcript, title)
+        has_transcript = bool(enriched_transcript)
+        detected_lang = (
+            detect_transcript_language(enriched_transcript, title)
+            if has_transcript
+            else {
+                "code": expected_video_lang if expected_video_lang in ("id", "en") else "id",
+                "name": "English" if expected_video_lang == "en" else "Indonesian (Bahasa Indonesia)",
+                "confidence": 0.0,
+                "is_supported": True
+            }
+        )
         if not detected_lang.get('is_supported', True):
             yield _sse({
                 "error": (
@@ -1371,6 +1428,116 @@ async def analyze_video(request: AnalyzeRequest):
             transcript_dump = transcript_dump[:MAX_LINES]
 
         transcript_text = "\n".join(transcript_dump)
+        if not has_transcript and api_provider != "gemini":
+            yield _sse({
+                "error": "Visual-only analysis currently requires Gemini. Switch to Gemini or provide a transcript.",
+                "status": 422,
+            })
+            return
+
+        # Strict visual evidence extraction for Gemini without transcript.
+        visual_frame_parts = []
+        visual_frame_count = 0
+
+        if not has_transcript and api_provider == "gemini":
+            frame_source = video_url or canonical_url
+            frame_span = max(0.0, end_bound - start_bound)
+            seen_hashes = set()
+            seen_seconds = set()
+
+            if frame_source and frame_span > 0:
+                for fraction in (0.10, 0.35, 0.65, 0.90):
+                    frame_epsilon = min(0.001, frame_span / 2.0)
+                    frame_ts = min(
+                        end_bound - frame_epsilon,
+                        max(start_bound, start_bound + frame_span * fraction),
+                    )
+                    second = int(round(frame_ts))
+                    if second in seen_seconds:
+                        continue
+                    seen_seconds.add(second)
+
+                    try:
+                        frame_path = await asyncio.to_thread(
+                            extract_clip_frame,
+                            frame_source,
+                            video_id,
+                            frame_ts,
+                            request.cookies,
+                            False,
+                            False,
+                        )
+                        if not frame_path:
+                            continue
+
+                        frame_bytes = await asyncio.to_thread(
+                            Path(frame_path).read_bytes
+                        )
+                        if len(frame_bytes) < 500:
+                            continue
+
+                        digest = hashlib.sha256(frame_bytes).hexdigest()
+                        if digest in seen_hashes:
+                            continue
+                        seen_hashes.add(digest)
+
+                        visual_frame_parts.append(
+                            types.Part.from_text(
+                                text=f"REAL VIDEO FRAME at {frame_ts:.1f} seconds"
+                            )
+                        )
+                        visual_frame_parts.append(
+                            types.Part.from_bytes(
+                                data=frame_bytes,
+                                mime_type="image/jpeg",
+                            )
+                        )
+                        visual_frame_count += 1
+
+                    except Exception as exc:
+                        logger.warning(
+                            "Frame extraction failed at %.1fs: %s",
+                            frame_ts, exc,
+                        )
+
+            logger.info(
+                "Extracted %s unique visual frames for %s",
+                visual_frame_count, video_id,
+            )
+
+            if visual_frame_count == 0:
+                yield _sse({
+                    "error": (
+                        "No transcript or authentic video frames are available. "
+                        "Visual analysis stopped to avoid inventing clips."
+                    ),
+                    "status": 422,
+                })
+                return
+
+        no_transcript_instruction = (
+            (
+                "NO TRANSCRIPT IS AVAILABLE. REAL VIDEO FRAMES ARE ATTACHED. "
+                "Analyze only objects, people, settings, actions, and text that are "
+                "directly visible in the supplied frames. You may use the video title, "
+                "channel, duration, and heatmap/audio-energy as supporting context. "
+                "Never invent dialogue, quotations, speaker names, claims, jokes, or "
+                "events that are not visibly supported. Do not infer motion or a sequence "
+                "of events from isolated still frames. Frame timestamps are approximate "
+                "visual anchors, not proof of an exact event start. Heatmap peaks are "
+                "activity signals, not proof of audience retention. If the frames do not "
+                "support a meaningful clip, return an empty clips array and explain why. "
+                "Always set key_quotes to []."
+            )
+            if visual_frame_count > 0
+            else (
+                "NO TRANSCRIPT OR VERIFIED VIDEO FRAMES ARE AVAILABLE. Do not invent "
+                "dialogue, people, events, or clip candidates. Return an empty clips "
+                "array and explain that there is insufficient evidence. Set key_quotes to []."
+            )
+            if not has_transcript
+            else ""
+        )
 
         is_auto_duration = str(request.duration).lower() == "auto"
         if is_auto_duration:
@@ -1382,7 +1549,7 @@ async def analyze_video(request: AnalyzeRequest):
                 "- STRICT MINIMUM DURATION: Every clip MUST be at least 18-20 seconds long. NEVER create micro-clips of 2, 3, 5, or 8 seconds! A 3-second clip is completely useless as a standalone Short/Reel/TikTok.\n"
                 "- Intelligently adjust the duration of each individual clip based on its natural narrative flow and context so that the setup, premise, context, punchline, and resolution are fully included.\n"
                 "- Generate variant clip durations naturally: ranging flexibly from approximately 20 seconds up to around 90 seconds (1 minute 30 seconds maximum). Do NOT force all clips to be the exact same length (some can be ~25-35s, some ~45-60s, and deeper discussions or stories up to around 90s).\n"
-                "- Strict maximum constraint: No clip should ever exceed 90 seconds (1 minute 30 seconds). Always ensure clips begin and end cleanly at complete sentence boundaries without mid-word or mid-sentence cuts."
+                "- Strict maximum constraint: No clip should ever exceed 90 seconds (1 minute 30 seconds). When a transcript is available, prefer complete sentence boundaries. In visual-only mode, choose conservative time ranges supported by the sampled frames; do not imply exact event timing."
             )
         else:
             duration_presets = {
@@ -1419,7 +1586,8 @@ async def analyze_video(request: AnalyzeRequest):
 
         prompt = (
             f"You are an expert viral video clip editor finding top clip candidates for TikTok, Instagram Reels, and YouTube Shorts.\n"
-            f"Analyze this YouTube video transcript and find {clip_range} high-performing, standalone clip candidates.\n\n"
+            f"{'Analyze the supplied REAL VIDEO FRAMES and available metadata and activity signals' if visual_frame_count > 0 else 'Analyze this YouTube video transcript'} and find {clip_range} high-performing, standalone clip candidates.\n"
+            f"{no_transcript_instruction}\n\n"
             f"VIDEO CONTEXT:\n"
             f"- Video Title: {title}\n"
             f"{channel_context}"
@@ -1443,30 +1611,28 @@ async def analyze_video(request: AnalyzeRequest):
             f"   - `title_suggestion`: Alternative title in {lang_name.upper()}.\n"
             f"   - `caption_suggestion`: Engaging social caption in {lang_name.upper()}.\n"
             f"   - `hashtag_suggestion`: Relevant hashtags in {lang_name.upper()}.\n"
-            f"   - `key_quotes`: MUST be verbatim spoken quotes directly from the transcript in {lang_name.upper()}.\n"
+            f"   - `key_quotes`: {'MUST be an empty array because no transcript is available.' if not has_transcript else f'MUST be verbatim spoken quotes directly from the transcript in {lang_name.upper()}.'}\n"
             f"================================================================================\n\n"
             f"{duration_instruction}\n\n"
             f"{clip_count_instruction}\n\n"
-            f"{focus_instruction}"
+            f"{focus_instruction}\n"
             f"CRITICAL TITLE & ATTRIBUTION RULES (NO FIRST-PERSON 'I' OR 'ME'):\n"
-            f"1. NEVER write clip titles or title suggestions using first-person pronouns ('I', 'me', 'my', 'mine', 'myself', or equivalents in other languages such as 'saya', 'aku', 'gue')!\n"
-            f"2. The user posting or curating these clips is a third-party editor, NOT the person speaking in the video. Titles must NEVER make it look like the clip is expressing the user's personal opinion, story, or reaction (e.g. NEVER write 'Why I think this is bad', 'How I made $100K', 'My biggest mistake', or 'I was shocked' / in Indonesian: NEVER 'Kenapa saya...', 'Cara aku...', 'Opini gue...').\n"
-            f"3. ALWAYS attribute statements to the context of the video and the actual person speaking:\n"
-            f"   - Use the actual name of the speaker, host, or guest from the video title, channel name ({channel or 'Host'}), or transcript dialogue (e.g. '{channel or 'Speaker'} Explains...', 'Why {channel or 'Host'} Shocked Fans', '[Name] Reveals The Truth' / in Indonesian: '{channel or 'Host'} Menjelaskan...', 'Alasan {channel or 'Host'} Mengungkapkan...').\n"
-            f"   - If the speaker's name is not explicitly stated, use their role or descriptive title (e.g. 'Host Reacts...', 'CEO Reveals...', 'Expert Explains...', 'Guest Breaks Down...' / in Indonesian: 'Host Menjelaskan...', 'Pakar Membongkar...').\n"
-            f"   - Or use objective, curiosity-driven framing (e.g. 'The Real Truth About...', 'How To Master...', 'Why Most People Fail At...', 'The Harsh Reality of...' / in Indonesian: 'Fakta Sebenarnya Tentang...', 'Cara Menguasai...').\n"
-            f"4. Keep titles snappy, viral, engaging, and under 8 words.\n\n"
-            f"Transcript (start|end[|interest] text):\n---\n{transcript_text}\n---\n\n"
-            f"Rules: use exact seconds from transcript; clips must start/end at sentence boundaries; do not overlap.\n"
+            f"1. NEVER write clip titles using first-person pronouns such as I, me, my, saya, aku, or gue.\n"
+            f"2. The user is a third-party editor, NOT the person in the video. Never present the user's personal opinion or experience as the video's content.\n"
+            f"{'3. TRANSCRIPT MODE: Attribute statements only to speakers supported by the transcript or explicitly identified video context.\n' if has_transcript else '3. VISUAL-ONLY MODE: Do not identify visible people or infer names, jobs, titles, or roles from appearance, channel name, or metadata.\n'}"
+            f"{'   - Use a speaker name only when explicitly supported by the transcript or video context.\n   - If identity is uncertain, use objective framing without naming or assigning a role.\n' if has_transcript else '   - Use neutral descriptions of visible people, objects, and settings only when directly supported by the frames.\n   - Do not attribute statements, opinions, dialogue, or expertise to anyone.\n'}"
+            f"4. Keep titles concise, engaging, and under 8 words.\n\n"
+            f"{'Transcript (start|end[|interest] text):' if has_transcript else 'Visual evidence: timestamped real video frames are attached; no transcript is available.'}\n---\n{transcript_text if has_transcript else '[No transcript available.]'}\n---\n\n"
+            f"{'Rules: use exact seconds from transcript; clips must start/end at sentence boundaries; do not overlap.' if has_transcript else 'Rules: use attached frame timestamps only as approximate visual anchors. Do not claim exact event timing or infer motion between still frames. Choose conservative clip ranges within the requested bounds; do not invent events.'}\n"
             f"VIRAL INTELLIGENCE SCORING (MANDATORY, EVIDENCE-BASED):\n"
             f"Score each candidate across five dimensions from 0 to 100:\n"
             f"- hook_strength: immediate curiosity, surprising claim, strong question, conflict, or compelling opening. Judge the actual first seconds, not a hypothetical rewritten hook.\n"
-            f"- emotional_impact: observable humor, surprise, tension, empathy, inspiration, or other emotional response in the transcript.\n"
+            f"- emotional_impact: {'observable humor, surprise, tension, empathy, inspiration, or other emotional response in the transcript.' if has_transcript else 'only emotions or expressions directly visible in the supplied frames; do not guess internal feelings.'}\n"
             f"- standalone_value: whether the clip has enough setup, context, and payoff to make sense without the full video. Penalize missing context and cut-off thoughts.\n"
             f"- clarity: how clearly and specifically the main idea is communicated.\n"
             f"- shareability: whether a viewer has a concrete reason to share, discuss, save, or react to this moment.\n"
             f"Calculate virality_score using this weighted formula: hook_strength 25%, emotional_impact 20%, standalone_value 25%, clarity 15%, shareability 15%. Round to the nearest integer. Do not inflate scores: a score above 90 requires exceptional evidence across most dimensions; ordinary useful moments should score lower.\n"
-            f"Provide score_reason in {lang_name}, one concise sentence grounded in the transcript. Do not claim actual views, retention, or future virality. Audio-energy heatmap is only a weak engagement proxy, not actual viewer retention.\n"
+            f"Provide score_reason in {lang_name}, one concise sentence grounded in the {'transcript' if has_transcript else 'visible frame evidence and available activity signals'}. Do not claim actual views, retention, or future virality. Audio-energy heatmap is only a weak engagement proxy, not actual viewer retention.\n"
             f"Prefer a few genuinely strong candidates over padding the list with weak moments. Ensure hook_time points to the real hook inside the selected clip.\n\n"
             f"Return clips sorted by virality_score desc."
         )
@@ -1618,7 +1784,7 @@ async def analyze_video(request: AnalyzeRequest):
 
             for idx, model_name in enumerate(models_to_try):
                 next_model_hint = models_to_try[idx + 1] if idx + 1 < len(models_to_try) else None
-                MAX_RETRIES = 1
+                MAX_RETRIES = 2
                 MODEL_TIMEOUT_SEC = 120.0  # 120s best-practice timeout for comprehensive video analysis
                 
                 for attempt in range(MAX_RETRIES):
@@ -1640,7 +1806,11 @@ async def analyze_video(request: AnalyzeRequest):
                         "step_progress": 18,
                         "overall_progress": 74,
                         "stage": "Neural Model Dispatch",
-                        "detail": f"Dispatched {len(transcript_dump)} lines to {model_name}...",
+                        "detail": (
+                            f"Dispatched {visual_frame_count} timestamped visual frames to {model_name}..."
+                            if visual_frame_count > 0
+                            else f"Dispatched {len(transcript_dump)} transcript lines to {model_name}..."
+                        ),
                         "model": model_name,
                         "message": f"Calling {model_name} (attempt {attempt + 1}/{MAX_RETRIES})..."
                     })
@@ -1649,7 +1819,7 @@ async def analyze_video(request: AnalyzeRequest):
                     task = asyncio.create_task(asyncio.to_thread(
                         client.models.generate_content,
                         model=model_name,
-                        contents=prompt,
+                        contents=[prompt, *visual_frame_parts] if visual_frame_count > 0 else prompt,
                         config=types.GenerateContentConfig(
                             response_mime_type="application/json",
                             response_schema=VideoAnalysis,
@@ -1673,19 +1843,39 @@ async def analyze_video(request: AnalyzeRequest):
                             
                             if elapsed < 8:
                                 stage = "Neural Context Loading"
-                                detail = f"Transmitting {len(transcript_dump)} timestamped dialogue segments to {model_name}..."
+                                detail = (
+                                    f"Sending {visual_frame_count} timestamped visual frames to {model_name}..."
+                                    if visual_frame_count > 0
+                                    else f"Transmitting {len(transcript_dump)} timestamped dialogue segments to {model_name}..."
+                                )
                                 step_prog = min(35, 12 + int(elapsed * 2.8))
                             elif elapsed < 20:
                                 stage = "Retention Spike Cross-Analysis"
-                                detail = f"Correlating viewer retention peaks against speaker dialogue to isolate viral moments..."
+                                detail = (
+                                    "Inspecting visible scenes and available activity signals..."
+                                    if visual_frame_count > 0
+                                    else "Correlating viewer retention peaks against speaker dialogue to isolate viral moments..."
+                                )
                                 step_prog = min(55, 35 + int((elapsed - 8) * 1.6))
                             elif elapsed < 40:
                                 stage = "Viral Hook & Curiosity Detection"
-                                detail = f"Scanning transcript dialogue for opening hooks, punchlines, controversial takes & emotional peaks..."
+                                detail = (
+                                    "Analyzing supplied video frames for visible hooks and meaningful scenes..."
+                                    if visual_frame_count > 0
+                                    else "Scanning transcript dialogue for opening hooks, punchlines, controversial takes & emotional peaks..."
+                                )
                                 step_prog = min(75, 55 + int((elapsed - 20) * 1.0))
                             elif elapsed < 65:
-                                stage = "Coherence & Sentence Boundary Snapping"
-                                detail = f"Ensuring clip candidates start and end naturally on sentence boundaries without mid-word cuts..."
+                                stage = (
+                                    "Visual Evidence Review"
+                                    if visual_frame_count > 0
+                                    else "Coherence & Sentence Boundary Snapping"
+                                )
+                                detail = (
+                                    "Checking conservative clip ranges against available visual anchors..."
+                                    if visual_frame_count > 0
+                                    else "Ensuring clip candidates start and end naturally on sentence boundaries without mid-word cuts..."
+                                )
                                 step_prog = min(88, 75 + int((elapsed - 40) * 0.5))
                             elif elapsed < 90:
                                 stage = "Virality Scoring & Selection"
@@ -1787,7 +1977,7 @@ async def analyze_video(request: AnalyzeRequest):
                         if any(x in err_str for x in ('404', 'not found', 'not supported')):
                             break
                         
-                        is_server_busy = any(x in err_str for x in ('503', 'unavailable', 'overloaded', '500', 'internal'))
+                        is_server_busy = any(x in err_str for x in ('504', 'deadline_exceeded', 'deadline expired', 'gateway timeout', 'timeout', '503', 'unavailable', 'overloaded', '500', 'internal'))
                         if not is_server_busy:
                             break
                 
@@ -1809,43 +1999,69 @@ async def analyze_video(request: AnalyzeRequest):
                     })
 
         if analysis_data is None:
-            # If any model in the fallback chain suffered quota exhaustion, prioritize showing the quota explanation
             error_to_report = encountered_quota_error or last_error
-            if error_to_report is not None:
-                err_str = str(error_to_report).lower()
-                if any(x in err_str for x in ('429', 'quota', 'resource exhausted', 'rate limit')):
-                    yield _sse({
-                        "error": "Quota limit reached across all available Gemini Flash models for this API key. Free keys have a request limit per minute. Please change your API key, generate a fresh free key at aistudio.google.com, or wait 30–60 seconds before trying again.",
-                        "status": 429
-                    })
-                elif any(x in err_str for x in ('503', 'unavailable', 'overloaded')):
-                    yield _sse({
-                        "error": "Google Gemini servers are currently experiencing high demand across all Flash models. Please change to a different Gemini API key or wait a few moments and try again.",
-                        "status": 503
-                    })
-                elif any(x in err_str for x in ('401', '403', 'api_key', 'invalid', 'permission')):
-                    yield _sse({
-                        "error": "Invalid or restricted Gemini API key. Please change your API key or generate a new free key at aistudio.google.com.",
-                        "status": 401
-                    })
-                elif any(x in err_str for x in ('404', 'not found', 'not supported')):
-                    models_preview = ', '.join(models_to_try[:3])
-                    yield _sse({
-                        "error": f"All tested Gemini Flash models ({models_preview}...) were unavailable or not supported for this API key. Please change your Gemini API key or generate a new one at aistudio.google.com.",
-                        "status": 404
-                    })
+            if enriched_transcript:
+                # Keep useful recommendations flowing when Gemini is temporarily unavailable.
+                # The deterministic fallback below selects real transcript segments and heatmap peaks;
+                # it does not invent dialogue or pretend that AI scoring succeeded.
+                logger.warning(
+                    "Gemini analysis unavailable after fallback chain; "
+                    "continuing with transcript-based clip synthesis. Last error: %s",
+                    error_to_report or "no response",
+                )
+                yield _sse({
+                    "step": 4,
+                    "step_progress": 82,
+                    "overall_progress": 84,
+                    "stage": "Transcript-Based Clip Recovery",
+                    "detail": "AI models did not respond. Building conservative clip candidates from available transcript and audio activity signals...",
+                    "model": requested_model,
+                    "message": "Gemini is temporarily unavailable — recovering clip candidates from the transcript."
+                })
+                analysis_data = {"summary": "", "clips": []}
+                successful_model = "Transcript fallback (AI unavailable)"
+            else:
+                # Without transcript evidence, do not invent dialogue or semantic clip recommendations.
+                if error_to_report is not None:
+                    err_str = str(error_to_report).lower()
+                    if any(x in err_str for x in ('429', 'quota', 'resource exhausted', 'rate limit')):
+                        yield _sse({
+                            "error": "Gemini rate limit or quota reached and no transcript is available for local clip recovery. Please wait before trying again or use another API key.",
+                            "status": 429
+                        })
+                    elif any(x in err_str for x in ('504', 'deadline_exceeded', 'deadline expired', 'gateway timeout', 'timeout')):
+                        yield _sse({
+                            "error": "Gemini timed out across the available models and no transcript is available for reliable clip recovery. Please retry in a moment.",
+                            "status": 504
+                        })
+                    elif any(x in err_str for x in ('503', 'unavailable', 'overloaded')):
+                        yield _sse({
+                            "error": "Google Gemini servers are temporarily unavailable and no transcript is available for clip recovery. Please try again shortly.",
+                            "status": 503
+                        })
+                    elif any(x in err_str for x in ('401', '403', 'api_key', 'invalid', 'permission')):
+                        yield _sse({
+                            "error": "Invalid or restricted Gemini API key. Please check the key in AI Engine Settings.",
+                            "status": 401
+                        })
+                    elif any(x in err_str for x in ('404', 'not found', 'not supported')):
+                        models_preview = ', '.join(models_to_try[:3])
+                        yield _sse({
+                            "error": f"All tested Gemini Flash models ({models_preview}...) were unavailable or not supported for this API key.",
+                            "status": 404
+                        })
+                    else:
+                        logger.error(f"Gemini error after all fallback models: {error_to_report}")
+                        yield _sse({
+                            "error": f"AI analysis failed across all available Flash models ({str(error_to_report)}). No transcript was available for safe clip recovery.",
+                            "status": 500
+                        })
                 else:
-                    logger.error(f"Gemini error after all fallback models: {error_to_report}")
                     yield _sse({
-                        "error": f"AI analysis failed across all available Flash models ({str(error_to_report)}). Please change your Gemini API key or try again in a few moments.",
+                        "error": "No response received from available Gemini Flash models, and no transcript was available for safe clip recovery.",
                         "status": 500
                     })
-            else:
-                yield _sse({
-                    "error": "No response received after trying all available Gemini Flash models. Please change your Gemini API key or try again in a few moments.",
-                    "status": 500
-                })
-            return
+                return
 
         # Fallback clip synthesis if 0 clips were returned after all models
         if len(analysis_data.get('clips', [])) == 0 and enriched_transcript:
@@ -1911,9 +2127,17 @@ async def analyze_video(request: AnalyzeRequest):
             "step_progress": 98,
             "overall_progress": 98,
             "stage": "Clip Verification & Alignment",
-            "detail": f"Verified {clip_count} clip segments with precise video timestamps and key quotes in {lang_name}.",
+            "detail": (
+                f"Reviewed {clip_count} visual-only clip candidates using approximate frame timestamps in {lang_name}."
+                if not has_transcript else
+                f"Verified {clip_count} clip segments with transcript-aligned timestamps and key quotes in {lang_name}."
+            ),
             "model": successful_model or requested_model,
-            "message": f"Found {clip_count} viral clip candidates ({lang_name}) with {successful_model or requested_model} — reconstructing transcripts..."
+            "message": (
+                f"Found {clip_count} visual clip candidates ({lang_name}) with {successful_model or requested_model} — preparing previews..."
+                if not has_transcript else
+                f"Found {clip_count} viral clip candidates ({lang_name}) with {successful_model or requested_model} — reconstructing transcripts..."
+            )
         })
         logger.info(f"Gemini analysis complete with {successful_model or requested_model}. Found {clip_count} clips in {lang_name}.")
 
@@ -1968,11 +2192,12 @@ async def analyze_video(request: AnalyzeRequest):
                     start = round(new_start, 2)
                     end = round(new_end, 2)
 
-            # Improve natural cut points: prefer nearby transcript sentence starts/ends.
-            start, end = _snap_clip_to_sentence_boundaries(
-                float(start), float(end), enriched_transcript, start_bound, end_bound,
-                min_target_duration, max_target_duration
-            )
+            # Sentence alignment is only valid when transcript evidence exists.
+            if has_transcript:
+                start, end = _snap_clip_to_sentence_boundaries(
+                    float(start), float(end), enriched_transcript, start_bound, end_bound,
+                    min_target_duration, max_target_duration
+                )
 
             if hook is None or not (start <= hook <= end):
                 hook = start
@@ -1999,8 +2224,8 @@ async def analyze_video(request: AnalyzeRequest):
                 clarity=_bounded_score(raw_clip.get('clarity', 0)),
                 shareability=_bounded_score(raw_clip.get('shareability', 0)),
                 score_reason=raw_clip.get('score_reason', ''),
-                key_quotes=raw_clip.get('key_quotes') or [],
-                transcript=" ".join(clip_lines),
+                key_quotes=(raw_clip.get('key_quotes') or []) if has_transcript else [],
+                transcript=" ".join(clip_lines) if has_transcript else "",
                 title_suggestion=sanitize_first_person_title(raw_clip.get('title_suggestion', ''), channel, lang=lang_code),
                 caption_suggestion=caption_sug,
                 hashtag_suggestion=hashtag_sug
@@ -2049,7 +2274,9 @@ async def analyze_video(request: AnalyzeRequest):
             source_type=source_type
         )
 
-        yield _sse({"done": True, "result": final_result.model_dump()})
+        result_payload = final_result.model_dump()
+        result_payload["subtitle_enabled"] = bool(request.subtitle_enabled)
+        yield _sse({"done": True, "result": result_payload})
 
     return StreamingResponse(
         stream(),

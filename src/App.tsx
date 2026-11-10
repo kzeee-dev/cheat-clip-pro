@@ -267,6 +267,12 @@ export default function App() {
   const [subtitlesSource, setSubtitlesSource] = useState<'youtube' | 'manual'>('youtube');
   const [manualSubtitlesContent, setManualSubtitlesContent] = useState<string>('');
   const [manualSubtitlesFileName, setManualSubtitlesFileName] = useState<string>('');
+  const [subtitleEnabled, setSubtitleEnabled] = useState<boolean>(() =>
+    localStorage.getItem('cheat_clip_subtitle_enabled') !== 'false'
+  );
+  useEffect(() => {
+    localStorage.setItem('cheat_clip_subtitle_enabled', String(subtitleEnabled));
+  }, [subtitleEnabled]);
   const [transcriptLanguage, setTranscriptLanguage] = useState<'id' | 'en'>(() => {
     const saved = localStorage.getItem('cheat_clip_transcript_language');
     if (saved === 'id' || saved === 'en') return saved;
@@ -796,8 +802,8 @@ export default function App() {
             file_name_suffix: settings.fileNameSuffix || '',
             title_position: settings.titlePosition,
             title_duration: settings.titleDuration || 'entire',
-            subtitles_enabled: settings.captionStyle !== 'none',
-            caption_style: settings.captionStyle,
+            subtitles_enabled: result.subtitle_enabled !== false && settings.captionStyle !== 'none',
+            caption_style: result.subtitle_enabled === false ? 'none' : settings.captionStyle,
             caption_font: settings.captionFont,
             title_font: settings.titleFont || settings.captionFont || 'Outfit',
             font_size: settings.fontSize,
@@ -1799,7 +1805,7 @@ export default function App() {
 
   const handleFormSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (sourceMode === 'youtube' && subtitlesSource === 'youtube' && !skipLanguageConfirm) {
+    if (subtitleEnabled && sourceMode === 'youtube' && subtitlesSource === 'youtube' && !skipLanguageConfirm) {
       setShowLanguageConfirmModal(true);
       return;
     }
@@ -1862,7 +1868,7 @@ export default function App() {
       }
     }
 
-    if (subtitlesSource === 'manual' && !manualSubtitlesContent.trim()) {
+    if (subtitleEnabled && subtitlesSource === 'manual' && !manualSubtitlesContent.trim()) {
       setError(t.errors.chooseSubtitleFile);
       return;
     }
@@ -1870,7 +1876,8 @@ export default function App() {
     const rangeSuffix = (rangeStartSecs !== undefined || rangeEndSecs !== undefined)
       ? `_range_${rangeStartSecs ?? 0}_${rangeEndSecs ?? 'end'}`
       : '';
-    const manualSuffix = subtitlesSource === 'manual' ? '_manual' : '';
+    const subtitleModeSuffix = subtitleEnabled ? '_subtitle_on' : '_subtitle_off';
+    const manualSuffix = subtitleEnabled && subtitlesSource === 'manual' ? '_manual' : '';
 
     // Determine target video identifier
     let targetAnalyzeUrl = sourceMode === 'gdrive' ? gdriveUrl.trim() : (sourceMode === 'twitch' ? (twitchUrl.trim() || url.trim()) : url.trim());
@@ -1891,18 +1898,33 @@ export default function App() {
       if (!currentVideoInfo && uploadedVideoFile) {
         setIsUploadingVideo(true);
         setLoadingDetails(t.form.uploadingVideo);
-        setAiStage('Extracting Audio for AI');
-        setAiDetail(`Extracting lightweight audio track in browser from ${uploadedVideoFile.name}...`);
-
         try {
-          const { audioFile, metadata } = await extractAudioFromVideoClient(uploadedVideoFile, (stage) => {
-            setAiDetail(stage);
-          });
+          let audioFile: File = uploadedVideoFile;
+          let metadata = {
+            duration: 0,
+            width: 0,
+            height: 0,
+            objectUrl: URL.createObjectURL(uploadedVideoFile),
+          };
 
-          setAiStage('Uploading AI Audio');
-          setAiDetail(`Uploading compressed audio track (${(audioFile.size / (1024 * 1024)).toFixed(1)} MB)...`);
+          if (subtitleEnabled) {
+            setAiStage('Extracting Audio for AI');
+            setAiDetail(`Extracting lightweight audio track in browser from ${uploadedVideoFile.name}...`);
+            const extracted = await extractAudioFromVideoClient(uploadedVideoFile, (stage) => {
+              setAiDetail(stage);
+            });
+            audioFile = extracted.audioFile;
+            metadata = extracted.metadata;
+          }
 
-          // Upload lightweight audio file (.wav) to /api/upload-video
+          setAiStage(subtitleEnabled ? 'Uploading AI Audio' : 'Uploading Original Video');
+          setAiDetail(
+            subtitleEnabled
+              ? `Uploading compressed audio track (${(audioFile.size / (1024 * 1024)).toFixed(1)} MB)...`
+              : `Uploading original video (${(audioFile.size / (1024 * 1024)).toFixed(1)} MB) for visual analysis...`
+          );
+
+          // ON uploads extracted audio; OFF uploads the original video.
           const upData = await new Promise<any>((resolve, reject) => {
             const xhr = new XMLHttpRequest();
             xhr.open('POST', apiUrl('/api/upload-video'));
@@ -1911,7 +1933,7 @@ export default function App() {
                 const pct = Math.round((event.loaded / event.total) * 100);
                 const loadedMb = (event.loaded / (1024 * 1024)).toFixed(1);
                 const totalMb = (event.total / (1024 * 1024)).toFixed(1);
-                setAiDetail(`Uploading audio track (${pct}% - ${loadedMb}/${totalMb} MB)...`);
+                setAiDetail(`Uploading ${subtitleEnabled ? 'audio' : 'video'} (${pct}% - ${loadedMb}/${totalMb} MB)...`);
                 setStepProgress(prev => ({ ...prev, 1: Math.min(95, pct) }));
               }
             };
@@ -1925,14 +1947,14 @@ export default function App() {
               } else {
                 try {
                   const errJson = JSON.parse(xhr.responseText);
-                  reject(new Error(errJson.detail || 'Failed to upload audio file'));
+                  reject(new Error(errJson.detail || 'Failed to upload media file'));
                 } catch {
                   reject(new Error(`Upload failed with status code ${xhr.status}`));
                 }
               }
             };
-            xhr.onerror = () => reject(new Error('Network error during audio upload'));
-            xhr.onabort = () => reject(new Error('Audio upload cancelled'));
+            xhr.onerror = () => reject(new Error('Network error during media upload'));
+            xhr.onabort = () => reject(new Error('Media upload cancelled'));
 
             const formData = new FormData();
             formData.append('file', audioFile);
@@ -1958,7 +1980,7 @@ export default function App() {
         } catch (uploadErr: any) {
           setIsUploadingVideo(false);
           setLoading(false);
-          setError(uploadErr.message || 'Failed to extract or upload audio');
+          setError(uploadErr.message || 'Failed to prepare or upload video');
           return;
         }
       }
@@ -1974,8 +1996,8 @@ export default function App() {
       const promptSuffix = customPrompt.trim() ? `_prompt_${customPrompt.trim().replace(/[^a-zA-Z0-9]/g, '_')}` : '';
       const modelSuffix = `_model_${selectedModel}`;
       const clipsSuffix = clipCountMode === 'auto' ? '_clips_auto' : `_clips_${targetClipCount}`;
-      const langSuffix = subtitlesSource === 'youtube' ? `_lang_${transcriptLanguage}` : '';
-      const cacheKey = `cheat_clip_cache_${videoId}_${durationPref}${modelSuffix}${clipsSuffix}${promptSuffix}${rangeSuffix}${manualSuffix}${langSuffix}`;
+      const langSuffix = subtitleEnabled && subtitlesSource === 'youtube' ? `_lang_${transcriptLanguage}` : '';
+      const cacheKey = `cheat_clip_cache_${videoId}_${durationPref}${modelSuffix}${clipsSuffix}${promptSuffix}${rangeSuffix}${manualSuffix}${langSuffix}${subtitleModeSuffix}`;
 
       const cachedData = localStorage.getItem(cacheKey);
       if (cachedData) {
@@ -2058,6 +2080,7 @@ export default function App() {
         signal: abortCtrl.signal,
         body: JSON.stringify({
           url: targetAnalyzeUrl,
+          subtitle_enabled: subtitleEnabled,
           duration: durationPref,
           api_key: apiProvider === 'gemini' ? (apiKey.trim() || undefined) : undefined,
           model: apiProvider === 'gemini' ? selectedModel : undefined,
@@ -2067,9 +2090,9 @@ export default function App() {
           custom_prompt: customPrompt.trim() || undefined,
           range_start: rangeStartSecs,
           range_end: rangeEndSecs,
-          subtitles: subtitlesSource === 'manual' ? manualSubtitlesContent : undefined,
-          subtitles_filename: subtitlesSource === 'manual' ? manualSubtitlesFileName : undefined,
-          transcript_language: subtitlesSource === 'youtube' ? transcriptLanguage : undefined,
+          subtitles: subtitleEnabled && subtitlesSource === 'manual' ? manualSubtitlesContent : undefined,
+          subtitles_filename: subtitleEnabled && subtitlesSource === 'manual' ? manualSubtitlesFileName : undefined,
+          transcript_language: subtitleEnabled && subtitlesSource === 'youtube' ? transcriptLanguage : undefined,
           target_clip_count: clipCountMode === 'auto' ? 'auto' : targetClipCount,
           cookies: userCookies || undefined,
         }),
@@ -2175,9 +2198,9 @@ export default function App() {
           const promptSuffix = customPrompt.trim() ? `_prompt_${customPrompt.trim().replace(/[^a-zA-Z0-9]/g, '_')}` : '';
           const modelSuffix = `_model_${selectedModel}`;
           const clipsSuffix = clipCountMode === 'auto' ? '_clips_auto' : `_clips_${targetClipCount}`;
-          const langSuffix = subtitlesSource === 'youtube' ? `_lang_${transcriptLanguage}` : '';
-          const targetCacheKey = `cheat_clip_cache_${resultData.video_id}_${durationPref}${modelSuffix}${clipsSuffix}${promptSuffix}${rangeSuffix}${manualSuffix}${langSuffix}`;
-          const tsKey = `cheat_clip_ts_${resultData.video_id}_${durationPref}${modelSuffix}${clipsSuffix}${promptSuffix}${rangeSuffix}${manualSuffix}${langSuffix}`;
+          const langSuffix = subtitleEnabled && subtitlesSource === 'youtube' ? `_lang_${transcriptLanguage}` : '';
+          const targetCacheKey = `cheat_clip_cache_${resultData.video_id}_${durationPref}${modelSuffix}${clipsSuffix}${promptSuffix}${rangeSuffix}${manualSuffix}${langSuffix}${subtitleModeSuffix}`;
+          const tsKey = `cheat_clip_ts_${resultData.video_id}_${durationPref}${modelSuffix}${clipsSuffix}${promptSuffix}${rangeSuffix}${manualSuffix}${langSuffix}${subtitleModeSuffix}`;
 
           // Ensure persisted cache stores durable server URL, not temporary blob URL
           const persistData = {
@@ -4512,6 +4535,32 @@ Transcript:
 
             {/* Subtitles Source Section */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem', marginTop: '0.5rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                <label style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)' }}>Subtitle Analysis</label>
+                <div style={{ display: 'flex', gap: '0.65rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className={`duration-btn ${subtitleEnabled ? 'active' : ''}`}
+                    onClick={() => setSubtitleEnabled(true)}
+                    disabled={loading}
+                    style={{ minWidth: '76px', borderRadius: 0 }}
+                  >ON</button>
+                  <button
+                    type="button"
+                    className={`duration-btn ${!subtitleEnabled ? 'active' : ''}`}
+                    onClick={() => setSubtitleEnabled(false)}
+                    disabled={loading}
+                    style={{ minWidth: '76px', borderRadius: 0 }}
+                  >OFF</button>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                    {subtitleEnabled
+                      ? 'ON: gunakan subtitle atau Whisper untuk analisis audio dan caption.'
+                      : 'OFF: Gemini menganalisis visual video saja. Tanpa download audio, Whisper, atau subtitle.'}
+                  </span>
+                </div>
+              </div>
+              {subtitleEnabled && (
+                <>
               <label style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>{t.form.subtitlesSource}</label>
               <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', cursor: 'pointer' }}>
@@ -4650,6 +4699,8 @@ Transcript:
                   <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style={{ flexShrink: 0, marginTop: '2px', opacity: 0.7 }}><path d="M8 1a7 7 0 1 1 0 14A7 7 0 0 1 8 1zm0 1.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM8 5a.75.75 0 1 1 0 1.5A.75.75 0 0 1 8 5zm-.75 2.5h1.5v4h-1.5v-4z"/></svg>
                   <span><strong>{t.form.subtitlesTipTitle}</strong> {t.form.subtitlesTipDesc} <a href="https://downsub.com/" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--secondary)', textDecoration: 'underline', fontWeight: '500' }}>downsub.com</a> {t.form.andUploadOption}</span>
                 </span>
+              )}
+                </>
               )}
             </div>
 
