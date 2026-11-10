@@ -4108,9 +4108,9 @@ def extract_clip_frame(
     allow_existing_frame_fallback: bool = True,
 ) -> Optional[str]:
     """
-    Extracts a single JPEG image frame at timestamp for the real video preview.
-    Caches the frame on disk in TEMP_DIR / 'frames'.
-    Guarantees returning a real video frame, never a promotional thumbnail.
+    Extract a JPEG frame at a timestamp.
+    Set allow_thumbnail_fallback=False and allow_existing_frame_fallback=False
+    when the image is being used as evidence for video analysis.
     """
     frames_dir = TEMP_DIR / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
@@ -4237,9 +4237,9 @@ def extract_clip_frame(
     if allow_thumbnail_fallback:
         try:
             for thumb_url in [
-            f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg",
-            f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
-        ]:
+                f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg",
+                f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+            ]:
                 try:
                     req = urllib.request.Request(thumb_url, headers={"User-Agent": "Mozilla/5.0"})
                     with urllib.request.urlopen(req, timeout=3) as resp, open(frame_path, "wb") as f_out:
