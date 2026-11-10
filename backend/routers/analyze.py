@@ -1497,14 +1497,12 @@ async def analyze_video(request: AnalyzeRequest):
             f"{focus_instruction}"
             f"CRITICAL TITLE & ATTRIBUTION RULES (NO FIRST-PERSON 'I' OR 'ME'):\n"
             f"1. NEVER write clip titles or title suggestions using first-person pronouns ('I', 'me', 'my', 'mine', 'myself', or equivalents in other languages such as 'saya', 'aku', 'gue')!\n"
-            f"2. The user posting or curating these clips is a third-party editor, NOT the person speaking in the video. Titles must NEVER make it look like the clip is expressing the user's personal opinion, story, or reaction (e.g. NEVER write 'Why I think this is bad', 'How I made $100K', 'My biggest mistake', or 'I was shocked' / in Indonesian: NEVER 'Kenapa saya...', 'Cara aku...', 'Opini gue...').\n"
-            f"3. ALWAYS attribute statements to the context of the video and the actual person speaking:\n"
-            f"   - Use the actual name of the speaker, host, or guest from the video title, channel name ({channel or 'Host'}), or transcript dialogue (e.g. '{channel or 'Speaker'} Explains...', 'Why {channel or 'Host'} Shocked Fans', '[Name] Reveals The Truth' / in Indonesian: '{channel or 'Host'} Menjelaskan...', 'Alasan {channel or 'Host'} Mengungkapkan...').\n"
-            f"   - If the speaker's name is not explicitly stated, use their role or descriptive title (e.g. 'Host Reacts...', 'CEO Reveals...', 'Expert Explains...', 'Guest Breaks Down...' / in Indonesian: 'Host Menjelaskan...', 'Pakar Membongkar...').\n"
+            f"2. The user posting or curating these clips is a third-party editor, NOT the person speaking in the video. Titles must NEVER make it look like the clip is expressing the user's personal opinion, story, or reaction.\n"
+            f"3. {'Use neutral, objective titles describing only visible actions or scenes. Do not identify people or infer their roles from appearance.' if not has_transcript else f'Attribute statements to the actual speaker using the video title, channel name ({channel or "Host"}), or transcript dialogue. If the speaker name is unknown, use objective topic framing rather than inventing a role.'}\n"
             f"   - Or use objective, curiosity-driven framing (e.g. 'The Real Truth About...', 'How To Master...', 'Why Most People Fail At...', 'The Harsh Reality of...' / in Indonesian: 'Fakta Sebenarnya Tentang...', 'Cara Menguasai...').\n"
             f"4. Keep titles snappy, viral, engaging, and under 8 words.\n\n"
             f"Transcript (start|end[|interest] text):\n---\n{transcript_text}\n---\n\n"
-            f"Rules: use exact seconds from transcript; clips must start/end at sentence boundaries; do not overlap.\n"
+            f"{'Use the labelled frame timestamps as evidence anchors; choose a plausible continuous clip window within the video range. Do not claim exact scene boundaries from sparse samples.' if not has_transcript else 'Rules: use exact seconds from transcript; clips must start/end at sentence boundaries; do not overlap.'}\n"
             f"VIRAL INTELLIGENCE SCORING (MANDATORY, EVIDENCE-BASED):\n"
             f"Score each candidate across five dimensions from 0 to 100:\n"
             f"- hook_strength: immediate curiosity, surprising claim, strong question, conflict, or compelling opening. Judge the actual first seconds, not a hypothetical rewritten hook.\n"
@@ -1546,7 +1544,9 @@ async def analyze_video(request: AnalyzeRequest):
                         frame_source_url,
                         f"{video_id}_analysis",
                         timestamp,
-                        request.cookies
+                        request.cookies,
+                        allow_thumbnail_fallback=False,
+                        allow_existing_frame_fallback=False
                     )
                     if not frame_path:
                         logger.warning("Visual analysis frame %s/%s could not be extracted at %.1fs", frame_index, sample_count, timestamp)
@@ -1573,9 +1573,7 @@ async def analyze_video(request: AnalyzeRequest):
                 except Exception as frame_error:
                     logger.warning("Visual frame extraction failed at %.1fs: %s", timestamp, frame_error)
 
-            # The frame helper can fall back to a static YouTube thumbnail. Requiring
-            # several distinct timestamp samples prevents a lone thumbnail being treated
-            # as evidence of the video's actual scenes.
+            # Strict extraction disables thumbnail and unrelated cached-frame fallbacks.
             if len(visual_frame_timestamps) < 3:
                 logger.warning(
                     "Insufficient distinct real-looking frames for visual analysis: %s/%s",
@@ -1597,7 +1595,22 @@ async def analyze_video(request: AnalyzeRequest):
                     len(visual_frame_timestamps), visual_frame_timestamps
                 )
 
+            if visual_frame_parts:
+                prompt += (
+                    "\\n\\nVISUAL EVIDENCE ATTACHED: Analyze the timestamp-labelled images above. "
+                    "Do not use outside knowledge or infer unseen events."
+                )
+            else:
+                prompt += (
+                    "\\n\\nNO USABLE VIDEO FRAMES WERE EXTRACTED. No transcript is available either. "
+                    "Return an empty clips array and state that reliable visual evidence could not be obtained. "
+                    "Do not create candidate timestamps or describe scenes."
+                )
+
         requested_model = (request.model or 'gemini-2.5-flash').strip()
+        if requested_model.lower() == "gemini-2.5-flash-lite":
+            logger.info("Requested model gemini-2.5-flash-lite is deprecated; switching to gemini-3.5-flash-lite.")
+            requested_model = "gemini-3.5-flash-lite"
         if any(dep in requested_model.lower() for dep in ['gemini-1.0', 'gemini-pro-vision']):
             logger.info(f"Requested model '{requested_model}' is outdated. Upgrading to gemini-2.5-flash.")
             requested_model = 'gemini-2.5-flash'
@@ -1848,30 +1861,29 @@ async def analyze_video(request: AnalyzeRequest):
                         if hasattr(resp_candidate, 'parsed') and resp_candidate.parsed is not None:
                             parsed = resp_candidate.parsed
                             raw_clips = getattr(parsed, 'clips', []) or []
-                            if raw_clips:
-                                parsed_data = {
-                                    "summary": getattr(parsed, 'summary', ''),
-                                    "clips": [
-                                        {
-                                            "title": sanitize_first_person_title(getattr(c, 'title', ''), channel, lang=lang_code),
-                                            "start_time": getattr(c, 'start_time', 0.0),
-                                            "end_time": getattr(c, 'end_time', 0.0),
-                                            "hook_time": getattr(c, 'hook_time', None),
-                                            "virality_score": getattr(c, 'virality_score', 0),
-                                            "hook_strength": getattr(c, 'hook_strength', 0),
-                                            "emotional_impact": getattr(c, 'emotional_impact', 0),
-                                            "standalone_value": getattr(c, 'standalone_value', 0),
-                                            "clarity": getattr(c, 'clarity', 0),
-                                            "shareability": getattr(c, 'shareability', 0),
-                                            "score_reason": getattr(c, 'score_reason', ''),
-                                            "key_quotes": getattr(c, 'key_quotes', []),
-                                            "title_suggestion": sanitize_first_person_title(getattr(c, 'title_suggestion', ''), channel, lang=lang_code),
-                                            "caption_suggestion": getattr(c, 'caption_suggestion', ''),
-                                            "hashtag_suggestion": getattr(c, 'hashtag_suggestion', ''),
-                                        }
-                                        for c in raw_clips
-                                    ]
-                                }
+                            parsed_data = {
+                                "summary": getattr(parsed, 'summary', ''),
+                                "clips": [
+                                    {
+                                        "title": sanitize_first_person_title(getattr(c, 'title', ''), channel, lang=lang_code),
+                                        "start_time": getattr(c, 'start_time', 0.0),
+                                        "end_time": getattr(c, 'end_time', 0.0),
+                                        "hook_time": getattr(c, 'hook_time', None),
+                                        "virality_score": getattr(c, 'virality_score', 0),
+                                        "hook_strength": getattr(c, 'hook_strength', 0),
+                                        "emotional_impact": getattr(c, 'emotional_impact', 0),
+                                        "standalone_value": getattr(c, 'standalone_value', 0),
+                                        "clarity": getattr(c, 'clarity', 0),
+                                        "shareability": getattr(c, 'shareability', 0),
+                                        "score_reason": getattr(c, 'score_reason', ''),
+                                        "key_quotes": getattr(c, 'key_quotes', []),
+                                        "title_suggestion": sanitize_first_person_title(getattr(c, 'title_suggestion', ''), channel, lang=lang_code),
+                                        "caption_suggestion": getattr(c, 'caption_suggestion', ''),
+                                        "hashtag_suggestion": getattr(c, 'hashtag_suggestion', ''),
+                                    }
+                                    for c in raw_clips
+                                ]
+                            }
                         
                         # Lenient fallback parser (repairs truncated/unescaped JSON from text)
                         if parsed_data is None and hasattr(resp_candidate, 'text') and resp_candidate.text:
