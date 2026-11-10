@@ -3,6 +3,7 @@ package com.kzeee.cheatclippro;
 import android.app.DownloadManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.database.Cursor;
@@ -57,52 +58,21 @@ public class MainActivity extends BridgeActivity {
         WebView webView = getBridge().getWebView();
         webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> {
             try {
-                String fileName = URLUtil.guessFileName(url, contentDisposition, mimeType);
-                if (fileName == null || fileName.trim().isEmpty()) {
-                    fileName = "cheat_clip_download";
+                Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                browserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                browserIntent.setPackage("com.android.chrome");
+
+                try {
+                    startActivity(browserIntent);
+                } catch (ActivityNotFoundException chromeNotInstalled) {
+                    browserIntent.setPackage(null);
+                    startActivity(browserIntent);
                 }
-
-                DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
-                request.setTitle(fileName);
-                request.setDescription("Mengunduh file dari Cheat Clip Pro");
-                request.setMimeType(mimeType != null ? mimeType : "application/octet-stream");
-                request.setNotificationVisibility(
-                    DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
-                );
-                request.setAllowedOverMetered(true);
-                request.setAllowedOverRoaming(true);
-                request.setDestinationInExternalPublicDir(
-                    Environment.DIRECTORY_DOWNLOADS,
-                    fileName
-                );
-
-                String cookie = CookieManager.getInstance().getCookie(url);
-                if (cookie != null && !cookie.isEmpty()) {
-                    request.addRequestHeader("Cookie", cookie);
-                }
-                if (userAgent != null && !userAgent.isEmpty()) {
-                    request.addRequestHeader("User-Agent", userAgent);
-                }
-
-                if (downloadManager == null) {
-                    Toast.makeText(this, "Layanan download Android tidak tersedia", Toast.LENGTH_LONG).show();
-                    return;
-                }
-
-                long downloadId = downloadManager.enqueue(request);
-                getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                    .edit()
-                    .putLong(KEY_LAST_DOWNLOAD_ID, downloadId)
-                    .apply();
-
-                Log.i(TAG, "Download queued. id=" + downloadId + ", url=" + url
-                    + ", expectedBytes=" + contentLength);
-                Toast.makeText(this, "Download dimulai: " + fileName, Toast.LENGTH_SHORT).show();
             } catch (Exception error) {
-                Log.e(TAG, "Could not enqueue download", error);
+                Log.e(TAG, "Could not open download in browser", error);
                 Toast.makeText(
                     this,
-                    "Gagal memulai download: " + error.getMessage(),
+                    "Tidak bisa membuka tautan download: " + error.getMessage(),
                     Toast.LENGTH_LONG
                 ).show();
             }
