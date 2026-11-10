@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -15,6 +16,7 @@ from backend.config import (
     TEMP_DIR,
     UPLOADS_DIR,
     compute_audio_energy_heatmap,
+    extract_clip_frame,
     get_video_file_metadata,
     logger,
     transcribe_local_video_file,
@@ -1394,11 +1396,13 @@ async def analyze_video(request: AnalyzeRequest):
         transcript_text = "\n".join(transcript_dump)
         no_transcript_instruction = (
             "NO TRANSCRIPT IS AVAILABLE. Do NOT infer or invent spoken dialogue, quotations, speaker names, "
-            "claims, jokes, or exact narrative events. Use ONLY the supplied title, channel, duration, and "
-            "available heatmap/audio-energy data. Treat heatmap peaks as approximate activity signals, not "
-            "proof of audience retention or specific content. If evidence is insufficient for a meaningful "
-            "clip, return an empty clips array and explain this limitation in the summary. Set key_quotes to []. "
-            "Choose timestamps only from the video duration and available signal ranges."
+            "claims, jokes, or exact narrative events. Use ONLY the supplied title, channel, duration, "
+            "available heatmap/audio-energy data, and attached timestamp-labelled video frames. Treat "
+            "heatmap peaks as approximate activity signals, not proof of audience retention or specific content. "
+            "Describe only visible actions, objects, scene changes, and visual storytelling supported by the frames. "
+            "Never claim to know dialogue or off-screen events. If the frames and metadata do not support a "
+            "meaningful visual clip, return an empty clips array and explain the limitation in the summary. "
+            "Set key_quotes to [] and transcript to an empty string. Choose timestamps only within the video duration."
             if not has_transcript else ""
         )
 
@@ -1447,10 +1451,21 @@ async def analyze_video(request: AnalyzeRequest):
 
         channel_context = f"- Channel / Host / Creator: {channel}\n" if channel else ""
 
+        visual_analysis_instruction = (
+            "VISUAL-ONLY ANALYSIS: The attached images are sampled frames from this exact video. "
+            "Each image is preceded by its timestamp in seconds. Use the timestamps as evidence anchors, "
+            "not exact scene boundaries. Select a clip window that contains a coherent visible event or "
+            "sequence supported by multiple frames. Do not invent speech, narration, reactions, identities, "
+            "or actions that are not visible. Keep key_quotes empty and transcript empty. "
+            "If the frames are too sparse or uninformative, return no clips rather than guessing.\n"
+            if not has_transcript else ""
+        )
+
         prompt = (
             f"You are an expert viral video clip editor finding top clip candidates for TikTok, Instagram Reels, and YouTube Shorts.\n"
-            f"{'Analyze the available video metadata and engagement signals' if not has_transcript else 'Analyze this YouTube video transcript'} and find {clip_range} high-performing, standalone clip candidates.\n"
-            f"{no_transcript_instruction}\n\n"
+            f"{'Analyze the supplied timestamp-labelled video frames and engagement signals' if not has_transcript else 'Analyze this YouTube video transcript'} and find {clip_range} high-performing, standalone clip candidates.\n"
+            f"{no_transcript_instruction}\n"
+            f"{visual_analysis_instruction}\n"
             f"VIDEO CONTEXT:\n"
             f"- Video Title: {title}\n"
             f"{channel_context}"
@@ -1475,6 +1490,7 @@ async def analyze_video(request: AnalyzeRequest):
             f"   - `caption_suggestion`: Engaging social caption in {lang_name.upper()}.\n"
             f"   - `hashtag_suggestion`: Relevant hashtags in {lang_name.upper()}.\n"
             f"   - `key_quotes`: {'MUST be an empty array because no transcript is available.' if not has_transcript else f'MUST be verbatim spoken quotes directly from the transcript in {lang_name.upper()}.'}\n"
+            f"   - `transcript`: {'MUST be an empty string because no transcript is available.' if not has_transcript else 'MUST contain only the supplied spoken words.'}\n"
             f"================================================================================\n\n"
             f"{duration_instruction}\n\n"
             f"{clip_count_instruction}\n\n"
@@ -1492,15 +1508,94 @@ async def analyze_video(request: AnalyzeRequest):
             f"VIRAL INTELLIGENCE SCORING (MANDATORY, EVIDENCE-BASED):\n"
             f"Score each candidate across five dimensions from 0 to 100:\n"
             f"- hook_strength: immediate curiosity, surprising claim, strong question, conflict, or compelling opening. Judge the actual first seconds, not a hypothetical rewritten hook.\n"
-            f"- emotional_impact: observable humor, surprise, tension, empathy, inspiration, or other emotional response in the transcript.\n"
-            f"- standalone_value: whether the clip has enough setup, context, and payoff to make sense without the full video. Penalize missing context and cut-off thoughts.\n"
-            f"- clarity: how clearly and specifically the main idea is communicated.\n"
+            f"- emotional_impact: {'observable emotion, surprise, tension, humor, or visual payoff supported by the supplied frames.' if not has_transcript else 'observable humor, surprise, tension, empathy, inspiration, or other emotional response in the transcript.'}\n"
+            f"- standalone_value: whether the clip has enough visible setup, context, and payoff to make sense without the full video. Penalize missing context.\n"
+            f"- clarity: {'how clearly the visible action or visual story can be understood.' if not has_transcript else 'how clearly and specifically the main idea is communicated.'}\n"
             f"- shareability: whether a viewer has a concrete reason to share, discuss, save, or react to this moment.\n"
             f"Calculate virality_score using this weighted formula: hook_strength 25%, emotional_impact 20%, standalone_value 25%, clarity 15%, shareability 15%. Round to the nearest integer. Do not inflate scores: a score above 90 requires exceptional evidence across most dimensions; ordinary useful moments should score lower.\n"
-            f"Provide score_reason in {lang_name}, one concise sentence grounded in the transcript. Do not claim actual views, retention, or future virality. Audio-energy heatmap is only a weak engagement proxy, not actual viewer retention.\n"
+            f"Provide score_reason in {lang_name}, one concise sentence grounded in {'the supplied visual frames' if not has_transcript else 'the transcript'}. Do not claim actual views, retention, or future virality. Audio-energy heatmap is only a weak engagement proxy, not actual viewer retention.\n"
             f"Prefer a few genuinely strong candidates over padding the list with weak moments. Ensure hook_time points to the real hook inside the selected clip.\n\n"
             f"Return clips sorted by virality_score desc."
         )
+
+        # When subtitles are unavailable, sample real timestamped video frames and send them
+        # as multimodal input. A unique cache ID avoids reusing preview thumbnails from the UI.
+        visual_frame_parts = []
+        visual_frame_timestamps = []
+        if not has_transcript and api_provider != "openrouter":
+            frame_source_url = video_url or canonical_url
+            sample_count = 4
+            sample_span = max(0.0, float(end_bound) - float(start_bound))
+            sample_times = [
+                round(float(start_bound) + sample_span * (i + 1) / (sample_count + 1), 1)
+                for i in range(sample_count)
+            ]
+            seen_frame_hashes = set()
+            yield _sse({
+                "step": 4,
+                "step_progress": 8,
+                "overall_progress": 71,
+                "stage": "Visual Frame Sampling",
+                "detail": "No transcript available — extracting timestamped video frames for visual analysis...",
+                "message": "Subtitle unavailable. Preparing visual evidence from the video..."
+            })
+            for frame_index, timestamp in enumerate(sample_times, start=1):
+                try:
+                    frame_path = await asyncio.to_thread(
+                        extract_clip_frame,
+                        frame_source_url,
+                        f"{video_id}_analysis",
+                        timestamp,
+                        request.cookies
+                    )
+                    if not frame_path:
+                        logger.warning("Visual analysis frame %s/%s could not be extracted at %.1fs", frame_index, sample_count, timestamp)
+                        continue
+                    frame_bytes = await asyncio.to_thread(Path(frame_path).read_bytes)
+                    if len(frame_bytes) < 2000:
+                        continue
+                    frame_hash = hashlib.sha256(frame_bytes).hexdigest()
+                    if frame_hash in seen_frame_hashes:
+                        logger.info("Skipping duplicate visual frame at %.1fs", timestamp)
+                        continue
+                    seen_frame_hashes.add(frame_hash)
+                    visual_frame_timestamps.append(timestamp)
+                    visual_frame_parts.append(types.Part.from_text(text=f"VIDEO FRAME TIMESTAMP: {timestamp:.1f} seconds"))
+                    visual_frame_parts.append(types.Part.from_bytes(data=frame_bytes, mime_type="image/jpeg"))
+                    yield _sse({
+                        "step": 4,
+                        "step_progress": 8 + int(frame_index * 2),
+                        "overall_progress": 71 + frame_index,
+                        "stage": "Visual Frame Sampling",
+                        "detail": f"Prepared visual frame {len(visual_frame_timestamps)} from {frame_index}/{sample_count} sample points...",
+                        "message": f"Visual evidence frame {len(visual_frame_timestamps)} ready."
+                    })
+                except Exception as frame_error:
+                    logger.warning("Visual frame extraction failed at %.1fs: %s", timestamp, frame_error)
+
+            # The frame helper can fall back to a static YouTube thumbnail. Requiring
+            # several distinct timestamp samples prevents a lone thumbnail being treated
+            # as evidence of the video's actual scenes.
+            if len(visual_frame_timestamps) < 3:
+                logger.warning(
+                    "Insufficient distinct real-looking frames for visual analysis: %s/%s",
+                    len(visual_frame_timestamps), sample_count
+                )
+                visual_frame_parts = []
+                visual_frame_timestamps = []
+                yield _sse({
+                    "step": 4,
+                    "step_progress": 16,
+                    "overall_progress": 72,
+                    "stage": "Visual Evidence Unavailable",
+                    "detail": "Could not obtain enough distinct video frames. Continuing safely without inventing clip moments...",
+                    "message": "Visual frame extraction was insufficient; no visual-only clip claims will be fabricated."
+                })
+            else:
+                logger.info(
+                    "Prepared %s distinct visual frames for no-transcript analysis at %s",
+                    len(visual_frame_timestamps), visual_frame_timestamps
+                )
 
         requested_model = (request.model or 'gemini-2.5-flash').strip()
         if any(dep in requested_model.lower() for dep in ['gemini-1.0', 'gemini-pro-vision']):
@@ -1680,7 +1775,7 @@ async def analyze_video(request: AnalyzeRequest):
                     task = asyncio.create_task(asyncio.to_thread(
                         client.models.generate_content,
                         model=model_name,
-                        contents=prompt,
+                        contents=([prompt, *visual_frame_parts] if visual_frame_parts else prompt),
                         config=types.GenerateContentConfig(
                             response_mime_type="application/json",
                             response_schema=VideoAnalysis,
