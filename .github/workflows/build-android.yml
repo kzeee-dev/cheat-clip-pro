@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - handoff-sync-hardening
       - update/live-render-terminal
       - rebuild/smart-core-audit
 
