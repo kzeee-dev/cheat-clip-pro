@@ -414,6 +414,17 @@ async def render_single_batch_clip(
         if not os.path.exists(out_path) or not is_valid_mp4(out_path):
             raise RuntimeError("Rendered MP4 file is incomplete or missing. Please retry rendering.")
 
+        final_duration = await asyncio.to_thread(_probe_media_duration, out_path)
+        duration_tolerance = max(1.0, duration_sec * 0.01)
+        duration_drift = abs(final_duration - duration_sec)
+        if duration_drift > duration_tolerance:
+            raise RuntimeError(
+                "Durasi video akhir berubah terlalu jauh setelah proses render "
+                f"(raw={duration_sec:.3f}s, final={final_duration:.3f}s, "
+                f"selisih={duration_drift:.3f}s, "
+                f"toleransi={duration_tolerance:.3f}s)."
+            )
+
         clip_status["status"] = "completed"
         clip_status["progress_percent"] = 100
         add_render_log(batch_id, f"Clip {idx + 1}: render selesai dan file MP4 valid", level="success", clip_index=idx)
