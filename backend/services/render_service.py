@@ -510,6 +510,15 @@ def _get_concat_stream_signature(file_path: str) -> Optional[Tuple[Tuple[str, ..
         for stream in streams:
             if stream.get("codec_type") not in ("video", "audio"):
                 continue
+            # The concat demuxer is unsafe when a stream begins with a material
+            # timestamp offset; let the normalized filter path reset PTS instead.
+            raw_start_time = stream.get("start_time")
+            if raw_start_time not in (None, "", "N/A"):
+                try:
+                    if abs(float(raw_start_time)) > 0.05:
+                        return None
+                except (TypeError, ValueError):
+                    return None
             signature.append(tuple(
                 str(stream.get(key) or "")
                 for key in (
