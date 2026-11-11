@@ -252,7 +252,15 @@ async def render_single_batch_clip(
         clip_status["base_title"] = base_title
 
         skip_ass_title = False
-        duration_sec = max(1.0, end_t - start_t)
+        # The downloaded slice may differ slightly from the requested source interval
+        # (keyframe cuts and downloader behavior). Use its actual duration for ASS and FFmpeg.
+        duration_sec = await asyncio.to_thread(_probe_media_duration, raw_path)
+        add_render_log(
+            batch_id,
+            f"Clip {idx + 1}: durasi media aktual {duration_sec:.2f}s",
+            level="info",
+            clip_index=idx,
+        )
 
         # Check if title has emoji -> render transparent color emoji PNG overlay
         if display_title and settings.title_position != "none" and has_emoji(display_title):
