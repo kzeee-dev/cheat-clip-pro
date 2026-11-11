@@ -494,7 +494,7 @@ def _get_concat_stream_signature(file_path: str) -> Optional[Tuple[Tuple[str, ..
         "ffprobe", "-v", "error", "-show_streams",
         "-show_data_hash", "sha256",
         "-show_entries",
-        "stream=codec_type,codec_name,profile,codec_tag_string,width,height,pix_fmt,level,sample_rate,channels,channel_layout,time_base,avg_frame_rate,r_frame_rate,field_order,extradata_hash",
+        "stream=codec_type,codec_name,profile,codec_tag_string,width,height,pix_fmt,level,sample_rate,channels,channel_layout,time_base,avg_frame_rate,r_frame_rate,field_order,start_time,extradata_hash",
         "-of", "json", file_path,
     ]
     try:
@@ -516,7 +516,7 @@ def _get_concat_stream_signature(file_path: str) -> Optional[Tuple[Tuple[str, ..
                     "codec_type", "codec_name", "profile", "codec_tag_string",
                     "width", "height", "pix_fmt", "level", "sample_rate",
                     "channels", "channel_layout", "time_base",
-                    "avg_frame_rate", "r_frame_rate", "field_order",
+                    "avg_frame_rate", "r_frame_rate", "field_order", "start_time",
                     "extradata_hash",
                 )
             ))
@@ -707,10 +707,11 @@ async def render_merged_batch_clips(
                         f"[{idx_p}:v]"
                         f"scale=1280:720:force_original_aspect_ratio=decrease,"
                         f"pad=1280:720:(ow-iw)/2:(oh-ih)/2,"
-                        f"setsar=1,fps=30,format=yuv420p"
+                        f"setsar=1,fps=30,format=yuv420p,setpts=PTS-STARTPTS"
                         f"[v{idx_p}];"
                         f"[{idx_p}:a]aresample=48000:async=1:first_pts=0,"
-                        f"aformat=sample_fmts=fltp:channel_layouts=stereo[a{idx_p}];"
+                        f"aformat=sample_fmts=fltp:channel_layouts=stereo,"
+                        f"asetpts=PTS-STARTPTS[a{idx_p}];"
                     )
 
                 concat_inputs = "".join(
