@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - handoff-sync-hardening
+      - restore/subtitle-modes-visual-analysis
       - update/live-render-terminal
       - rebuild/smart-core-audit
 
