@@ -1,9 +1,10 @@
+import logging
 import os
 import requests
 from urllib.parse import urlsplit
 from typing import Optional
 from youtube_transcript_api.proxies import WebshareProxyConfig, GenericProxyConfig
-from backend.config import logger
+logger = logging.getLogger("cheat-clip-pro")
 
 class TimeoutSession(requests.Session):
     """requests.Session that enforces a default timeout to avoid hanging indefinitely on slow proxies."""
