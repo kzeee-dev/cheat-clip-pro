@@ -4102,21 +4102,42 @@ def render_clip_to_mp4(
     return str(output_mp4_path)
 
 
-def extract_clip_frame(video_url: str, video_id: str, timestamp: float = 0.0, cookies_content: Optional[str] = None) -> Optional[str]:
+def extract_clip_frame(
+    video_url: str,
+    video_id: str,
+    timestamp: float = 0.0,
+    cookies_content: Optional[str] = None,
+    allow_thumbnail_fallback: bool = True,
+    allow_existing_frame_fallback: bool = True,
+) -> Optional[str]:
     """
-    Extracts a single JPEG image frame at timestamp for the real video preview.
-    Caches the frame on disk in TEMP_DIR / 'frames'.
-    Guarantees returning a real video frame, never a promotional thumbnail.
+    Extract a JPEG frame at a timestamp.
+    Set allow_thumbnail_fallback=False and allow_existing_frame_fallback=False
+    when the image is being used as evidence for video analysis.
     """
     frames_dir = TEMP_DIR / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
 
     safe_id = re.sub(r'[^a-zA-Z0-9_-]', '_', video_id)
-    target_ts = max(1.0, timestamp if timestamp > 0 else 5.0)
+    strict_evidence = not allow_thumbnail_fallback and not allow_existing_frame_fallback
+
+    # Strict visual evidence must honor timestamps, including the first second.
+    # Preserve the legacy minimum timestamp for ordinary extraction.
+    if strict_evidence:
+        target_ts = max(0.0, timestamp)
+    else:
+        target_ts = max(1.0, timestamp if timestamp > 0 else 5.0)
+
     sec = int(round(target_ts))
     frame_path = frames_dir / f"{safe_id}_{sec}.jpg"
 
-    if frame_path.exists() and frame_path.stat().st_size > 2000:
+    if strict_evidence:
+        # Never reuse a cached frame as fresh visual evidence.
+        try:
+            frame_path.unlink(missing_ok=True)
+        except OSError as e:
+            logger.warning(f"Could not clear cached evidence frame {frame_path}: {e}")
+    elif frame_path.exists() and frame_path.stat().st_size > 2000:
         return str(frame_path)
 
     # 0. Check if this is an uploaded or gdrive local video in UPLOADS_DIR or specified by video_url
@@ -4160,7 +4181,10 @@ def extract_clip_frame(video_url: str, video_id: str, timestamp: float = 0.0, co
             return str(frame_path)
 
     # 1. Check local sliced clips or exports
-    local_candidates = list(TEMP_DIR.glob(f"*{safe_id}*.mp4")) + list(EXPORTS_DIR.glob(f"*{safe_id}*.mp4"))
+    local_candidates = (
+        list(TEMP_DIR.glob(f"*{safe_id}*.mp4")) + list(EXPORTS_DIR.glob(f"*{safe_id}*.mp4"))
+        if allow_existing_frame_fallback else []
+    )
     for candidate in local_candidates:
         if candidate.exists() and candidate.stat().st_size > 10000 and "slice_" not in candidate.name and is_valid_mp4(candidate):
             cmd = [
@@ -4202,7 +4226,7 @@ def extract_clip_frame(video_url: str, video_id: str, timestamp: float = 0.0, co
                 "--no-warnings",
                 clean_url
             ]
-            subprocess.run(slice_cmd, capture_output=True, text=True, timeout=20)
+            subprocess.run(slice_cmd, capture_output=True, text=True, timeout=75)
         if temp_slice.exists() and temp_slice.stat().st_size > 1000:
             ff_cmd = [
                 "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
@@ -4224,25 +4248,27 @@ def extract_clip_frame(video_url: str, video_id: str, timestamp: float = 0.0, co
         logger.warning(f"Slice frame extraction failed for {video_id}: {e}")
 
     # 3. Check any existing frame for this video in frames_dir as fallback
-    existing_frames = list(frames_dir.glob(f"{safe_id}_*.jpg"))
-    if existing_frames:
-        return str(existing_frames[0])
+    if allow_existing_frame_fallback:
+        existing_frames = list(frames_dir.glob(f"{safe_id}_*.jpg"))
+        if existing_frames:
+            return str(existing_frames[0])
 
-    # 4. Instant high-res thumbnail fallback (guarantees frame preview NEVER gets stuck)
-    try:
-        for thumb_url in [
-            f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg",
-            f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
-        ]:
-            try:
-                req = urllib.request.Request(thumb_url, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(req, timeout=3) as resp, open(frame_path, "wb") as f_out:
-                    f_out.write(resp.read())
-                if frame_path.exists() and frame_path.stat().st_size > 2000:
-                    return str(frame_path)
-            except Exception:
-                continue
-    except Exception as e:
-        logger.warning(f"Thumbnail fallback failed for {video_id}: {e}")
+    # 4. Instant high-res thumbnail fallback (disabled for evidence-based analysis)
+    if allow_thumbnail_fallback:
+        try:
+            for thumb_url in [
+                f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg",
+                f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+            ]:
+                try:
+                    req = urllib.request.Request(thumb_url, headers={"User-Agent": "Mozilla/5.0"})
+                    with urllib.request.urlopen(req, timeout=3) as resp, open(frame_path, "wb") as f_out:
+                        f_out.write(resp.read())
+                    if frame_path.exists() and frame_path.stat().st_size > 2000:
+                        return str(frame_path)
+                except Exception:
+                    continue
+        except Exception as e:
+            logger.warning(f"Thumbnail fallback failed for {video_id}: {e}")
 
     return None
