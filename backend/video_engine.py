@@ -3905,18 +3905,20 @@ def render_clip_to_mp4(
                 filter_chains.append(drawtext_cmd)
                 out_video_map = "[v_watermarked]"
 
-    # 2. Audio Processing (Original Audio with Boost, BGM with start offset, and Hook SFX at frame 0)
+    # 2. Audio Processing (keep the audio timeline aligned to the video)
     audio_inputs_to_mix = []
+    dur = max(1.0, float(clip_duration))
+
+    # Pad short tracks and trim long tracks to the video duration. Without this,
+    # amix=duration=first plus -shortest can truncate a clip when source audio ends early.
     has_orig_audio = check_has_audio(video_path)
     if has_orig_audio:
         orig_vol = max(0.0, min(2.0, float(original_audio_volume)))
-        if abs(orig_vol - 1.0) > 0.01:
-            filter_chains.append(f"[0:a:0]volume={orig_vol:.3f}[v_orig_boosted]")
-            audio_inputs_to_mix.append("[v_orig_boosted]")
-        else:
-            audio_inputs_to_mix.append("[0:a:0]")
-
-    dur = max(1.0, float(clip_duration))
+        filter_chains.append(
+            f"[0:a:0]asetpts=PTS-STARTPTS,volume={orig_vol:.3f},"
+            f"apad,atrim=duration={dur:.3f}[orig_proc]"
+        )
+        audio_inputs_to_mix.append("[orig_proc]")
 
     # BGM input with start offset & looping
     if bgm_enabled and bgm_path and os.path.exists(bgm_path):
@@ -3930,7 +3932,9 @@ def render_clip_to_mp4(
         vol = max(0.0, min(1.0, float(bgm_volume)))
         fade_st = max(0.0, dur - 1.5)
         filter_chains.append(
-            f"[{bgm_idx}:a]asetpts=PTS-STARTPTS,volume={vol:.3f},afade=t=out:st={fade_st:.2f}:d=1.5[bgm_proc]"
+            f"[{bgm_idx}:a]asetpts=PTS-STARTPTS,volume={vol:.3f},"
+            f"afade=t=out:st={fade_st:.2f}:d=1.5,apad,"
+            f"atrim=duration={dur:.3f}[bgm_proc]"
         )
         audio_inputs_to_mix.append("[bgm_proc]")
 
@@ -3942,27 +3946,26 @@ def render_clip_to_mp4(
 
         sfx_vol = max(0.0, min(2.0, float(hook_sfx_volume)))
         filter_chains.append(
-            f"[{sfx_idx}:a]asetpts=PTS-STARTPTS,atrim=end={dur:.2f},volume={sfx_vol:.3f}[sfx_proc]"
+            f"[{sfx_idx}:a]asetpts=PTS-STARTPTS,volume={sfx_vol:.3f},"
+            f"apad,atrim=duration={dur:.3f}[sfx_proc]"
         )
         audio_inputs_to_mix.append("[sfx_proc]")
 
-    # Mix audio streams together
+    # Every input now spans the video duration; longest avoids early audio EOF truncation.
     if len(audio_inputs_to_mix) > 1:
         mix_inputs_str = "".join(audio_inputs_to_mix)
         filter_chains.append(
-            f"{mix_inputs_str}amix=inputs={len(audio_inputs_to_mix)}:duration=first:dropout_transition=2:normalize=0[a_final]"
+            f"{mix_inputs_str}amix=inputs={len(audio_inputs_to_mix)}:"
+            f"duration=longest:dropout_transition=2:normalize=0[a_final]"
         )
         out_audio_map = "[a_final]"
     elif len(audio_inputs_to_mix) == 1:
         single_stream = audio_inputs_to_mix[0]
-        if single_stream == "[0:a:0]":
-            out_audio_map = "0:a:0"
-        else:
-            filter_chains.append(f"{single_stream}anull[a_final]")
-            out_audio_map = "[a_final]"
+        filter_chains.append(f"{single_stream}anull[a_final]")
+        out_audio_map = "[a_final]"
     else:
         out_audio_map = "0:a:0?"
-
+    
     final_filter_complex = ";".join(filter_chains)
 
     # Video encoder (resolved from user choice: auto, nvenc, amf, qsv, cpu)
