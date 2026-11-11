@@ -41,6 +41,7 @@ export interface AnalyzeResponse {
   model?: string;
   video_url?: string;
   source_type?: 'youtube' | 'upload' | 'gdrive' | 'twitch';
+  subtitle_enabled?: boolean;
 }
 
 export type AspectRatioOption = '9:16' | '1:1' | '4:3' | '16:9' | '16:9_landscape';
