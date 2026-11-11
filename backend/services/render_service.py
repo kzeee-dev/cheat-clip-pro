@@ -128,6 +128,46 @@ def _ensure_concat_streams(file_path: str) -> bool:
 
 
 
+def _probe_media_duration(file_path: str) -> float:
+    """Return the actual probed media duration (prefer container, then video stream)."""
+    command = [
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration:stream=codec_type,duration",
+        "-of", "json", file_path,
+    ]
+    result = subprocess.run(
+        command, capture_output=True, text=True, timeout=20, check=False
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"ffprobe gagal membaca durasi {Path(file_path).name}: "
+            f"{(result.stderr or '')[-1200:]}"
+        )
+    try:
+        payload = json.loads(result.stdout or "{}")
+        raw_duration = payload.get("format", {}).get("duration")
+        duration = float(raw_duration) if raw_duration not in (None, "", "N/A") else 0.0
+        if duration <= 0:
+            video_durations = [
+                float(stream["duration"])
+                for stream in payload.get("streams", [])
+                if stream.get("codec_type") == "video"
+                and stream.get("duration") not in (None, "", "N/A")
+                and float(stream["duration"]) > 0
+            ]
+            duration = max(video_durations) if video_durations else 0.0
+    except (TypeError, ValueError, KeyError, json.JSONDecodeError) as exc:
+        raise RuntimeError(
+            f"Metadata durasi tidak valid untuk {Path(file_path).name}: {exc}"
+        ) from exc
+    if not (0.05 < duration < 86400):
+        raise RuntimeError(
+            f"Durasi media tidak valid untuk {Path(file_path).name}: {duration!r}"
+        )
+    return duration
+
+
+
 async def render_single_batch_clip(
     batch_id: str,
     idx: int,
@@ -615,19 +655,30 @@ async def render_merged_batch_clips(
         raw_merged_filename = f"{batch_id}_merged_raw.mp4"
         raw_merged_path = str(TEMP_DIR / raw_merged_filename)
 
+        # Normalize stream layout first, then measure each real downloaded segment.
+        # Requested source in/out points are not reliable durations after keyframe slicing.
+        segment_durations: List[float] = []
+        for idx_p, segment_path in enumerate(part_paths):
+            add_render_log(
+                batch_id,
+                f"Merged: memeriksa stream segmen {idx_p + 1}/{len(part_paths)}",
+                clip_index=0,
+            )
+            await asyncio.to_thread(_ensure_concat_streams, segment_path)
+            measured_duration = await asyncio.to_thread(
+                _probe_media_duration, segment_path
+            )
+            segment_durations.append(measured_duration)
+            logger.info(
+                "MERGED SEGMENT TIMING | index=%d | file=%s | actual_duration=%.3fs",
+                idx_p + 1, Path(segment_path).name, measured_duration,
+            )
+
+        expected_concat_duration = sum(segment_durations)
+
         if len(part_paths) == 1:
             raw_merged_path = part_paths[0]
         else:
-            for idx_p, segment_path in enumerate(part_paths):
-                add_render_log(
-                    batch_id,
-                    f"Merged: memeriksa stream segmen {idx_p + 1}/{len(part_paths)}",
-                    clip_index=0,
-                )
-                await asyncio.to_thread(
-                    _ensure_concat_streams, segment_path
-                )
-
             concat_timeout = max(180, total_segments * 60)
             logger.info(f"Concatenating {len(part_paths)} segments into {raw_merged_path}")
 
@@ -706,6 +757,29 @@ async def render_merged_batch_clips(
                     clip_index=0,
                 )
 
+        # Verify the produced timeline before assigning subtitle offsets.
+        raw_merged_duration = await asyncio.to_thread(
+            _probe_media_duration, raw_merged_path
+        )
+        concat_tolerance = max(1.0, expected_concat_duration * 0.01)
+        concat_drift = abs(raw_merged_duration - expected_concat_duration)
+        add_render_log(
+            batch_id,
+            f"Merged: durasi aktual {raw_merged_duration:.2f}s; "
+            f"akumulasi segmen {expected_concat_duration:.2f}s",
+            level="info",
+            clip_index=0,
+        )
+        if concat_drift > concat_tolerance:
+            raise RuntimeError(
+                "Durasi hasil concat tidak cocok dengan total durasi segmen "
+                f"(hasil={raw_merged_duration:.3f}s, "
+                f"total_segmen={expected_concat_duration:.3f}s, "
+                f"selisih={concat_drift:.3f}s, "
+                f"toleransi={concat_tolerance:.3f}s). "
+                "Render dihentikan agar subtitle dan audio tidak bergeser."
+            )
+
         add_render_log(batch_id, "Merged: mulai transkripsi dan pembuatan subtitle", clip_index=0)
         # 3. Transcribe & generate time-shifted subtitles
         target_lang = None
@@ -723,7 +797,9 @@ async def render_merged_batch_clips(
         for i, seg in enumerate(clips):
             s_t = float(seg.get("start_time", 0.0))
             e_t = float(seg.get("end_time", s_t + 30.0))
-            seg_dur = max(0.1, e_t - s_t)
+            # Word timestamps are clip-relative; shift by the measured media
+            # duration, not the requested source interval.
+            seg_dur = segment_durations[i]
             if settings.caption_style != "none":
                 seg_words = await asyncio.to_thread(
                     transcribe_clip_words,
@@ -875,6 +951,16 @@ async def render_merged_batch_clips(
 
         if not os.path.exists(out_path) or not is_valid_mp4(out_path):
             raise RuntimeError("Merged MP4 file is incomplete or missing. Please retry rendering.")
+
+        final_duration = await asyncio.to_thread(_probe_media_duration, out_path)
+        final_tolerance = max(1.0, raw_merged_duration * 0.01)
+        final_drift = abs(final_duration - raw_merged_duration)
+        if final_drift > final_tolerance:
+            raise RuntimeError(
+                "Durasi video akhir berubah terlalu jauh setelah proses render "
+                f"(raw={raw_merged_duration:.3f}s, final={final_duration:.3f}s, "
+                f"selisih={final_drift:.3f}s)."
+            )
 
         clip_status["status"] = "completed"
         clip_status["progress_percent"] = 100
