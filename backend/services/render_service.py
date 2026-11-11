@@ -415,7 +415,7 @@ async def render_single_batch_clip(
             raise RuntimeError("Rendered MP4 file is incomplete or missing. Please retry rendering.")
 
         final_duration = await asyncio.to_thread(_probe_media_duration, out_path)
-        duration_tolerance = max(1.0, duration_sec * 0.01)
+        duration_tolerance = max(0.25, duration_sec * 0.01)
         duration_drift = abs(final_duration - duration_sec)
         if duration_drift > duration_tolerance:
             raise RuntimeError(
@@ -790,7 +790,7 @@ async def render_merged_batch_clips(
         raw_merged_duration = await asyncio.to_thread(
             _probe_media_duration, raw_merged_path
         )
-        concat_tolerance = max(1.0, expected_concat_duration * 0.01)
+        concat_tolerance = max(0.25, expected_concat_duration * 0.01)
         concat_drift = abs(raw_merged_duration - expected_concat_duration)
         add_render_log(
             batch_id,
@@ -982,7 +982,7 @@ async def render_merged_batch_clips(
             raise RuntimeError("Merged MP4 file is incomplete or missing. Please retry rendering.")
 
         final_duration = await asyncio.to_thread(_probe_media_duration, out_path)
-        final_tolerance = max(1.0, raw_merged_duration * 0.01)
+        final_tolerance = max(0.25, raw_merged_duration * 0.01)
         final_drift = abs(final_duration - raw_merged_duration)
         if final_drift > final_tolerance:
             raise RuntimeError(
