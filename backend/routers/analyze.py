@@ -346,6 +346,12 @@ async def analyze_video(request: AnalyzeRequest):
         is_uploaded = False
         is_gdrive = is_google_drive_url(req_clean)
         uploaded_file_path: Optional[Path] = None
+        logger.info(
+            "Analysis request mode: subtitle_enabled=%s, provider=%s, source=%s",
+            bool(request.subtitle_enabled),
+            api_provider,
+            "google_drive" if is_gdrive else "remote_or_uploaded_video",
+        )
 
         if is_gdrive:
             yield _sse({
