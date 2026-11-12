@@ -739,7 +739,12 @@ def _is_usable_audio_file(path: Union[str, Path]) -> bool:
     """Reject incomplete/corrupt audio cache entries before Whisper consumes them."""
     media_path = Path(path)
     try:
-        if not media_path.is_file() or media_path.stat().st_size < 5000:
+        if (
+            not media_path.is_file()
+            or media_path.name.endswith(".part")
+            or media_path.suffix.lower() not in {".m4a", ".mp3", ".webm", ".opus", ".ogg", ".wav", ".aac", ".mp4"}
+            or media_path.stat().st_size < 5000
+        ):
             return False
     except OSError:
         return False
