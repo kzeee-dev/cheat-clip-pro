@@ -4259,6 +4259,11 @@ def extract_clip_frame(
                         timeout=60,
                     )
                 except subprocess.TimeoutExpired:
+                    for partial_slice in frames_dir.glob(f"{temp_slice_prefix.name}.*"):
+                        try:
+                            partial_slice.unlink()
+                        except OSError:
+                            pass
                     logger.warning(
                         "Video frame slice timed out for %s (client=%s)",
                         video_id, player_client or "default",
