@@ -1485,6 +1485,7 @@ async def analyze_video(request: AnalyzeRequest):
                             request.cookies,
                             False,
                             False,
+                            request.proxy,
                         )
                         if not frame_path:
                             continue
