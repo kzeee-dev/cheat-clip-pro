@@ -735,6 +735,36 @@ def fetch_transcript_ytdlp(
     return []
 
 
+def _is_usable_audio_file(path: Union[str, Path]) -> bool:
+    """Reject incomplete/corrupt audio cache entries before Whisper consumes them."""
+    media_path = Path(path)
+    try:
+        if not media_path.is_file() or media_path.stat().st_size < 5000:
+            return False
+    except OSError:
+        return False
+
+    try:
+        probe = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-select_streams", "a:0",
+                "-show_entries", "stream=codec_type",
+                "-of", "csv=p=0",
+                str(media_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+        return probe.returncode == 0 and "audio" in (probe.stdout or "").lower()
+    except FileNotFoundError:
+        # Keep compatibility with minimal environments where ffprobe is absent.
+        return media_path.stat().st_size > 10000
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def download_youtube_audio_file(
     video_id: str,
     output_dir: Optional[Union[str, Path]] = None,
@@ -747,87 +777,125 @@ def download_youtube_audio_file(
     target_dir = Path(output_dir) if output_dir else TEMP_DIR
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    # Check for existing cached audio
+    # Reuse only complete audio files; discard stale/corrupt cache entries.
     for cand in target_dir.glob(f"yt_audio_{video_id}.*"):
-        if cand.is_file() and cand.stat().st_size > 10000:
-            logger.info(f"Using cached YouTube audio file: {cand}")
-            return cand
+        if cand.is_file():
+            if _is_usable_audio_file(cand):
+                logger.info(f"Using validated cached YouTube audio file: {cand}")
+                return cand
+            try:
+                cand.unlink()
+            except OSError:
+                pass
+
+    primary_proxy = proxy or get_proxy_url()
+    proxy_attempts = [primary_proxy, None] if primary_proxy else [None]
 
     if is_twitch_url(video_id):
         tw = extract_twitch_info(video_id)
         target_url = get_twitch_canonical_url(tw) if tw else video_id
         safe_vid = f"twitch_{tw['id']}" if (tw and tw.get('type') == 'vod') else (f"twitch_clip_{tw['id']}" if tw else video_id)
         for cand in target_dir.glob(f"twitch_audio_{safe_vid}.*"):
-            if cand.is_file() and cand.stat().st_size > 10000:
-                logger.info(f"Using cached Twitch audio file: {cand}")
+            if cand.is_file() and _is_usable_audio_file(cand):
+                logger.info(f"Using validated cached Twitch audio file: {cand}")
                 return cand
+            try:
+                cand.unlink()
+            except OSError:
+                pass
+
         if on_progress:
             on_progress("Downloading Twitch Audio", "Downloading Twitch audio stream for Whisper speech transcription...", 35)
-        ydl_opts = {
-            'format': 'Audio_Only/bestaudio[ext=m4a]/bestaudio/best[height<=360]/best',
-            'outtmpl': str(target_dir / f"twitch_audio_{safe_vid}.%(ext)s"),
-            'quiet': True,
-            'no_warnings': True,
-            'nocheckcertificate': True,
-            'proxy': proxy or get_proxy_url(),
-            'socket_timeout': 15,
-            'retries': 3,
-        }
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([target_url])
-            for cand in target_dir.glob(f"twitch_audio_{safe_vid}.*"):
-                if cand.is_file() and cand.stat().st_size > 5000:
-                    logger.info(f"Twitch audio downloaded successfully: {cand} ({cand.stat().st_size} bytes)")
-                    return cand
-        except Exception as e:
-            logger.warning(f"Twitch audio download failed: {e}")
-            return None
+
+        for attempt_proxy in proxy_attempts:
+            ydl_opts = {
+                'format': 'bestaudio[ext=m4a]/bestaudio/best[height<=360]/best',
+                'outtmpl': str(target_dir / f"twitch_audio_{safe_vid}.%(ext)s"),
+                'quiet': True,
+                'no_warnings': True,
+                'nocheckcertificate': True,
+                'proxy': attempt_proxy,
+                'socket_timeout': 15,
+                'retries': 2,
+                'fragment_retries': 2,
+            }
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([target_url])
+                for cand in target_dir.glob(f"twitch_audio_{safe_vid}.*"):
+                    if _is_usable_audio_file(cand):
+                        logger.info(f"Twitch audio downloaded and validated: {cand} ({cand.stat().st_size} bytes)")
+                        return cand
+            except Exception as exc:
+                logger.warning(
+                    "Twitch audio download failed (proxy=%s): %s",
+                    "yes" if attempt_proxy else "no",
+                    exc,
+                )
+        return None
 
     if on_progress:
         on_progress("Downloading Audio Track", "Downloading audio stream for Whisper speech transcription...", 35)
 
     with ephemeral_cookies_file(cookies_content) as temp_cookies:
         eff_cookies = temp_cookies or get_effective_cookies_path()
-        # Start with clients that commonly expose stable audio formats; isolate retries
-        # so a no-format response from one player cannot poison the whole extraction.
         client_combinations = [
             ['web'],
             ['ios'],
             ['mweb'],
             ['android'],
             ['web_embedded'],
-            ['default']
+            ['default'],
         ]
-
         target_url = f"https://www.youtube.com/watch?v={video_id}"
 
-        for clients in client_combinations:
-            ydl_opts = {
-                'format': 'bestaudio[ext=m4a]/bestaudio/best[height<=360]/best',
-                'outtmpl': str(target_dir / f"yt_audio_{video_id}.%(ext)s"),
-                'quiet': True,
-                'no_warnings': True,
-                'nocheckcertificate': True,
-                'proxy': proxy or get_proxy_url(),
-                'socket_timeout': 15,
-                'retries': 3,
-                'extractor_args': {'youtube': {'player_client': clients}}
-            }
-            if eff_cookies:
-                ydl_opts['cookiefile'] = str(eff_cookies)
+        for attempt_proxy in proxy_attempts:
+            for clients in client_combinations:
+                # Clear abandoned partial downloads before retrying another player.
+                for partial in target_dir.glob(f"yt_audio_{video_id}.*.part"):
+                    try:
+                        partial.unlink()
+                    except OSError:
+                        pass
 
-            try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    ydl.download([target_url])
+                ydl_opts = {
+                    'format': 'bestaudio[ext=m4a]/bestaudio/best[height<=360]/best',
+                    'outtmpl': str(target_dir / f"yt_audio_{video_id}.%(ext)s"),
+                    'quiet': True,
+                    'no_warnings': True,
+                    'nocheckcertificate': True,
+                    'proxy': attempt_proxy,
+                    'socket_timeout': 15,
+                    'retries': 2,
+                    'fragment_retries': 2,
+                    'extractor_retries': 1,
+                    'extractor_args': {'youtube': {'player_client': clients}},
+                }
+                if eff_cookies:
+                    ydl_opts['cookiefile'] = str(eff_cookies)
 
-                for cand in target_dir.glob(f"yt_audio_{video_id}.*"):
-                    if cand.is_file() and cand.stat().st_size > 5000:
-                        logger.info(f"YouTube audio downloaded successfully ({clients}): {cand} ({cand.stat().st_size} bytes)")
-                        return cand
-            except Exception as e:
-                logger.warning(f"Audio download attempt with client {clients} failed: {e}")
-                continue
+                try:
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        ydl.download([target_url])
+
+                    for cand in target_dir.glob(f"yt_audio_{video_id}.*"):
+                        if _is_usable_audio_file(cand):
+                            logger.info(
+                                "YouTube audio downloaded and validated (client=%s, proxy=%s): %s (%s bytes)",
+                                clients,
+                                "yes" if attempt_proxy else "no",
+                                cand,
+                                cand.stat().st_size,
+                            )
+                            return cand
+                except Exception as exc:
+                    logger.warning(
+                        "Audio download failed (client=%s, proxy=%s): %s",
+                        clients,
+                        "yes" if attempt_proxy else "no",
+                        exc,
+                    )
+                    continue
 
     return None
 
