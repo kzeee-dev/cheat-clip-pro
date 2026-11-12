@@ -6,6 +6,7 @@ on:
     branches:
       - handoff-sync-hardening
       - restore/subtitle-modes-visual-analysis
+      - fix/media-source-resilience
       - update/live-render-terminal
       - rebuild/smart-core-audit
 

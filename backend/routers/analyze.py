@@ -346,6 +346,12 @@ async def analyze_video(request: AnalyzeRequest):
         is_uploaded = False
         is_gdrive = is_google_drive_url(req_clean)
         uploaded_file_path: Optional[Path] = None
+        logger.info(
+            "Analysis request mode: subtitle_enabled=%s, provider=%s, source=%s",
+            bool(request.subtitle_enabled),
+            api_provider,
+            "google_drive" if is_gdrive else "remote_or_uploaded_video",
+        )
 
         if is_gdrive:
             yield _sse({
@@ -1445,13 +1451,26 @@ async def analyze_video(request: AnalyzeRequest):
             seen_hashes = set()
             seen_seconds = set()
 
-            if frame_source and frame_span > 0:
-                for fraction in (0.10, 0.35, 0.65, 0.90):
-                    frame_epsilon = min(0.001, frame_span / 2.0)
-                    frame_ts = min(
-                        end_bound - frame_epsilon,
-                        max(start_bound, start_bound + frame_span * fraction),
+            if frame_source:
+                if frame_span > 0:
+                    frame_timestamps = []
+                    for fraction in (0.10, 0.35, 0.65, 0.90):
+                        frame_epsilon = min(0.001, frame_span / 2.0)
+                        frame_ts = min(
+                            end_bound - frame_epsilon,
+                            max(start_bound, start_bound + frame_span * fraction),
+                        )
+                        frame_timestamps.append(frame_ts)
+                else:
+                    # Metadata can fail while the source itself is still downloadable.
+                    # Try one real opening frame; never fabricate a duration or timestamps.
+                    frame_timestamps = [0.5]
+                    logger.warning(
+                        "Video duration unavailable for %s; attempting one authentic opening frame",
+                        video_id,
                     )
+
+                for frame_ts in frame_timestamps:
                     second = int(round(frame_ts))
                     if second in seen_seconds:
                         continue
@@ -1466,6 +1485,7 @@ async def analyze_video(request: AnalyzeRequest):
                             request.cookies,
                             False,
                             False,
+                            request.proxy,
                         )
                         if not frame_path:
                             continue
@@ -1538,6 +1558,14 @@ async def analyze_video(request: AnalyzeRequest):
             if not has_transcript
             else ""
         )
+
+        if not has_transcript and duration <= 0:
+            no_transcript_instruction += (
+                " SOURCE DURATION COULD NOT BE VERIFIED. The supplied opening frame "
+                "may be used only for a visual description. Do not generate clip "
+                "candidates, clip start/end times, or inferred motion. Return an empty "
+                "clips array and explain that the source duration could not be verified."
+            )
 
         is_auto_duration = str(request.duration).lower() == "auto"
         if is_auto_duration:
