@@ -346,7 +346,6 @@ def fetch_video_metadata(url: str, custom_proxy: Optional[str] = None, cookies_c
     attempts = [proxy, None] if proxy else [None]
     best_info = None
     best_duration = 0.0
-    best_proxy = None
 
     with ephemeral_cookies_file(cookies_content) as temp_cookies:
         eff_cookies = temp_cookies or get_effective_cookies_path()
@@ -378,7 +377,6 @@ def fetch_video_metadata(url: str, custom_proxy: Optional[str] = None, cookies_c
                     if best_info is None or duration > best_duration:
                         best_info = info
                         best_duration = duration
-                        best_proxy = attempt_proxy
                     if duration > 0 or info.get("is_live"):
                         break
                     logger.info(
@@ -400,7 +398,9 @@ def fetch_video_metadata(url: str, custom_proxy: Optional[str] = None, cookies_c
     if video_id and not is_twitch and (best_info is None or best_duration <= 0):
         page_duration, page_title = _fetch_youtube_page_metadata(video_id, proxy)
         if page_duration <= 0 and proxy:
-            page_duration, page_title = _fetch_youtube_page_metadata(video_id, None)
+            direct_duration, direct_title = _fetch_youtube_page_metadata(video_id, None)
+            page_duration = direct_duration or page_duration
+            page_title = direct_title or page_title
 
     if best_info is not None:
         title = best_info.get("title") or page_title
