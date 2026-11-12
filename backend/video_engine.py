@@ -4199,51 +4199,131 @@ def extract_clip_frame(
             if frame_path.exists() and frame_path.stat().st_size > 2000:
                 return str(frame_path)
 
-    # 2. Extract a tiny 1-second slice of format 18 (fast 360p mp4) using yt-dlp + ffmpeg
+    # 2. Download a short authentic video section with adaptive formats and player clients.
+    # Format 18 is not guaranteed to exist; use a low-resolution video-first selector instead.
     try:
         if video_url and is_twitch_url(video_url):
             tw_info = extract_twitch_info(video_url)
             clean_url = get_twitch_canonical_url(tw_info) if tw_info else video_url.strip()
+            player_clients = [None]
         elif is_twitch_url(video_id):
             tw_info = extract_twitch_info(video_id)
             clean_url = get_twitch_canonical_url(tw_info) if tw_info else video_id
+            player_clients = [None]
         else:
             clean_url = video_url.strip() if video_url else f"https://www.youtube.com/watch?v={video_id}"
+            # Isolated clients prevent a failing Android/SABR response from blocking
+            # clients that expose ordinary downloadable video formats.
+            player_clients = ["web", "ios", "mweb", "android"]
+
         with ephemeral_cookies_file(cookies_content) as temp_cookies:
             base_cmd = get_yt_dlp_base_cmd(include_cookies=True, cookies_path=temp_cookies)
-            temp_slice = frames_dir / f"slice_{safe_id}_{sec}.mp4"
+            temp_slice_prefix = frames_dir / f"slice_{safe_id}_{sec}"
+            temp_slice_pattern = f"{temp_slice_prefix}.%(ext)s"
 
-            t_start = target_ts
-            t_end = target_ts + 1.0
-            t_start_fmt = format_section_time(t_start)
-            t_end_fmt = format_section_time(t_end)
+            # Remove only stale temporary slices for this exact video/timestamp.
+            for stale_slice in frames_dir.glob(f"{temp_slice_prefix.name}.*"):
+                try:
+                    stale_slice.unlink()
+                except OSError:
+                    pass
 
-            slice_cmd = [
-                *base_cmd,
-                "-f", "18/best[height<=720]/best",
-                "--download-sections", f"*{t_start_fmt}-{t_end_fmt}",
-                "-o", str(temp_slice),
-                "--no-warnings",
-                clean_url
-            ]
-            subprocess.run(slice_cmd, capture_output=True, text=True, timeout=75)
-        if temp_slice.exists() and temp_slice.stat().st_size > 1000:
-            ff_cmd = [
-                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                "-ss", "00:00:00.20",
-                "-i", str(temp_slice),
-                "-vframes", "1",
-                "-strict", "-1",
-                str(frame_path)
-            ]
-            subprocess.run(ff_cmd, capture_output=True, timeout=5)
-            try:
-                temp_slice.unlink()
-            except Exception:
-                pass
+            t_start_fmt = format_section_time(target_ts)
+            t_end_fmt = format_section_time(target_ts + 1.0)
+            extracted = False
 
-        if frame_path.exists() and frame_path.stat().st_size > 2000:
-            return str(frame_path)
+            for player_client in player_clients:
+                slice_cmd = [
+                    *base_cmd,
+                    "--no-warnings",
+                    "--no-playlist",
+                    "--socket-timeout", "15",
+                    "--retries", "1",
+                    "--fragment-retries", "1",
+                    "--extractor-retries", "1",
+                    "-f", "bestvideo[height<=480]/best[height<=480]/bestvideo/best",
+                    "--download-sections", f"*{t_start_fmt}-{t_end_fmt}",
+                    "--force-overwrites",
+                    "--no-part",
+                    "-o", temp_slice_pattern,
+                ]
+                if player_client:
+                    slice_cmd.extend(["--extractor-args", f"youtube:player_client={player_client}"])
+                slice_cmd.append(clean_url)
+
+                try:
+                    result = subprocess.run(
+                        slice_cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
+                except subprocess.TimeoutExpired:
+                    logger.warning(
+                        "Video frame slice timed out for %s (client=%s)",
+                        video_id, player_client or "default",
+                    )
+                    continue
+
+                slice_candidates = sorted(
+                    (
+                        path for path in frames_dir.glob(f"{temp_slice_prefix.name}.*")
+                        if path.is_file() and path.stat().st_size > 1000
+                    ),
+                    key=lambda path: path.stat().st_size,
+                    reverse=True,
+                )
+
+                for temp_slice in slice_candidates:
+                    ff_cmd = [
+                        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                        "-ss", "00:00:00.20",
+                        "-i", str(temp_slice),
+                        "-frames:v", "1",
+                        "-q:v", "2",
+                        "-strict", "-1",
+                        str(frame_path),
+                    ]
+                    try:
+                        frame_result = subprocess.run(
+                            ff_cmd, capture_output=True, text=True, timeout=10
+                        )
+                    except subprocess.TimeoutExpired:
+                        frame_result = None
+
+                    if (
+                        frame_result is not None
+                        and frame_result.returncode == 0
+                        and frame_path.exists()
+                        and frame_path.stat().st_size > 2000
+                    ):
+                        extracted = True
+                        break
+
+                for temp_slice in slice_candidates:
+                    try:
+                        temp_slice.unlink()
+                    except OSError:
+                        pass
+
+                if extracted:
+                    logger.info(
+                        "Extracted authentic frame for %s at %.2fs using player client %s",
+                        video_id, target_ts, player_client or "default",
+                    )
+                    break
+
+                detail = (result.stderr or result.stdout or "").strip()
+                logger.warning(
+                    "Video frame download failed for %s (client=%s, exit=%s): %s",
+                    video_id,
+                    player_client or "default",
+                    result.returncode,
+                    detail[-500:],
+                )
+
+            if extracted:
+                return str(frame_path)
     except Exception as e:
         logger.warning(f"Slice frame extraction failed for {video_id}: {e}")
 
