@@ -4109,6 +4109,7 @@ def extract_clip_frame(
     cookies_content: Optional[str] = None,
     allow_thumbnail_fallback: bool = True,
     allow_existing_frame_fallback: bool = True,
+    proxy: Optional[str] = None,
 ) -> Optional[str]:
     """
     Extract a JPEG frame at a timestamp.
@@ -4231,101 +4232,111 @@ def extract_clip_frame(
             t_start_fmt = format_section_time(target_ts)
             t_end_fmt = format_section_time(target_ts + 1.0)
             extracted = False
+            proxy_attempts = [proxy, None] if proxy else [None]
 
-            for player_client in player_clients:
-                slice_cmd = [
-                    *base_cmd,
-                    "--no-warnings",
-                    "--no-playlist",
-                    "--socket-timeout", "15",
-                    "--retries", "1",
-                    "--fragment-retries", "1",
-                    "--extractor-retries", "1",
-                    "-f", "bestvideo[height<=480]/best[height<=480]/bestvideo/best",
-                    "--download-sections", f"*{t_start_fmt}-{t_end_fmt}",
-                    "--force-overwrites",
-                    "--no-part",
-                    "-o", temp_slice_pattern,
-                ]
-                if player_client:
-                    slice_cmd.extend(["--extractor-args", f"youtube:player_client={player_client}"])
-                slice_cmd.append(clean_url)
-
-                try:
-                    result = subprocess.run(
-                        slice_cmd,
-                        capture_output=True,
-                        text=True,
-                        timeout=60,
-                    )
-                except subprocess.TimeoutExpired:
-                    for partial_slice in frames_dir.glob(f"{temp_slice_prefix.name}.*"):
-                        try:
-                            partial_slice.unlink()
-                        except OSError:
-                            pass
-                    logger.warning(
-                        "Video frame slice timed out for %s (client=%s)",
-                        video_id, player_client or "default",
-                    )
-                    continue
-
-                slice_candidates = sorted(
-                    (
-                        path for path in frames_dir.glob(f"{temp_slice_prefix.name}.*")
-                        if path.is_file() and path.stat().st_size > 1000
-                    ),
-                    key=lambda path: path.stat().st_size,
-                    reverse=True,
-                )
-
-                for temp_slice in slice_candidates:
-                    ff_cmd = [
-                        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                        "-ss", "00:00:00.20",
-                        "-i", str(temp_slice),
-                        "-frames:v", "1",
-                        "-q:v", "2",
-                        "-strict", "-1",
-                        str(frame_path),
+            for attempt_proxy in proxy_attempts:
+                for player_client in player_clients:
+                    slice_cmd = [
+                        *base_cmd,
+                        "--no-warnings",
+                        "--no-playlist",
+                        "--socket-timeout", "15",
+                        "--retries", "1",
+                        "--fragment-retries", "1",
+                        "--extractor-retries", "1",
+                        "-f", "bestvideo[height<=480]/best[height<=480]/bestvideo/best",
+                        "--download-sections", f"*{t_start_fmt}-{t_end_fmt}",
+                        "--force-overwrites",
+                        "--no-part",
+                        "-o", temp_slice_pattern,
                     ]
+                    if attempt_proxy:
+                        slice_cmd.extend(["--proxy", attempt_proxy])
+                    if player_client:
+                        slice_cmd.extend(["--extractor-args", f"youtube:player_client={player_client}"])
+                    slice_cmd.append(clean_url)
+
                     try:
-                        frame_result = subprocess.run(
-                            ff_cmd, capture_output=True, text=True, timeout=10
+                        result = subprocess.run(
+                            slice_cmd,
+                            capture_output=True,
+                            text=True,
+                            timeout=60,
                         )
                     except subprocess.TimeoutExpired:
-                        frame_result = None
+                        for partial_slice in frames_dir.glob(f"{temp_slice_prefix.name}.*"):
+                            try:
+                                partial_slice.unlink()
+                            except OSError:
+                                pass
+                        logger.warning(
+                            "Video frame slice timed out for %s (client=%s, proxy=%s)",
+                            video_id, player_client or "default",
+                            "yes" if attempt_proxy else "no",
+                        )
+                        continue
 
-                    if (
-                        frame_result is not None
-                        and frame_result.returncode == 0
-                        and frame_path.exists()
-                        and frame_path.stat().st_size > 2000
-                    ):
-                        extracted = True
+                    slice_candidates = sorted(
+                        (
+                            path for path in frames_dir.glob(f"{temp_slice_prefix.name}.*")
+                            if path.is_file() and path.stat().st_size > 1000
+                        ),
+                        key=lambda path: path.stat().st_size,
+                        reverse=True,
+                    )
+
+                    for temp_slice in slice_candidates:
+                        ff_cmd = [
+                            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                            "-ss", "00:00:00.20",
+                            "-i", str(temp_slice),
+                            "-frames:v", "1",
+                            "-q:v", "2",
+                            "-strict", "-1",
+                            str(frame_path),
+                        ]
+                        try:
+                            frame_result = subprocess.run(
+                                ff_cmd, capture_output=True, text=True, timeout=10
+                            )
+                        except subprocess.TimeoutExpired:
+                            frame_result = None
+
+                        if (
+                            frame_result is not None
+                            and frame_result.returncode == 0
+                            and frame_path.exists()
+                            and frame_path.stat().st_size > 2000
+                        ):
+                            extracted = True
+                            break
+
+                    for temp_slice in slice_candidates:
+                        try:
+                            temp_slice.unlink()
+                        except OSError:
+                            pass
+
+                    if extracted:
+                        logger.info(
+                            "Extracted authentic frame for %s at %.2fs using player client %s (proxy=%s)",
+                            video_id, target_ts, player_client or "default",
+                            "yes" if attempt_proxy else "no",
+                        )
                         break
 
-                for temp_slice in slice_candidates:
-                    try:
-                        temp_slice.unlink()
-                    except OSError:
-                        pass
+                    detail = (result.stderr or result.stdout or "").strip()
+                    logger.warning(
+                        "Video frame download failed for %s (client=%s, proxy=%s, exit=%s): %s",
+                        video_id,
+                        player_client or "default",
+                        "yes" if attempt_proxy else "no",
+                        result.returncode,
+                        detail[-500:],
+                    )
 
                 if extracted:
-                    logger.info(
-                        "Extracted authentic frame for %s at %.2fs using player client %s",
-                        video_id, target_ts, player_client or "default",
-                    )
                     break
-
-                detail = (result.stderr or result.stdout or "").strip()
-                logger.warning(
-                    "Video frame download failed for %s (client=%s, exit=%s): %s",
-                    video_id,
-                    player_client or "default",
-                    result.returncode,
-                    detail[-500:],
-                )
 
             if extracted:
                 return str(frame_path)
