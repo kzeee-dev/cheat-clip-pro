@@ -280,7 +280,7 @@ def _extract_youtube_duration_from_page(page_html: str) -> float:
                 pass
 
     match = re.search(
-        r'<meta[^>]+itemprop=["\\']duration["\\'][^>]+content=["\\']PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?',
+        r"""<meta[^>]+itemprop=["']duration["'][^>]+content=["']PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?""",
         page_html,
         re.IGNORECASE,
     )
@@ -316,7 +316,7 @@ def _fetch_youtube_page_metadata(video_id: str, proxy: Optional[str] = None):
         page = response.text or ""
         duration = _extract_youtube_duration_from_page(page)
         title_match = re.search(
-            r'<meta\s+property=["\\']og:title["\\']\s+content=["\\']([^"\\']+)',
+            r"""<meta\s+property=["']og:title["']\s+content=["']([^"']+)""",
             page,
             re.IGNORECASE,
         )
