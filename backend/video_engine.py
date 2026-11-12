@@ -497,16 +497,16 @@ def get_yt_dlp_base_cmd(
 ) -> List[str]:
     """
     Returns base command for yt-dlp with JavaScript runtime, player extractor args, and cookies.
-    Tries standalone 'yt-dlp' executable first, then falls back to python module:
-    [sys.executable, "-m", "yt_dlp"] which works 100% of the time if installed via pip.
+    Prefers the installed yt_dlp Python module, then falls back to the standalone executable.
     """
-    if shutil.which("yt-dlp"):
-        cmd = ["yt-dlp"]
-    else:
-        try:
-            import yt_dlp
-            cmd = [sys.executable, "-m", "yt_dlp"]
-        except ImportError:
+    try:
+        import yt_dlp
+        cmd = [sys.executable, "-m", "yt_dlp"]
+    except ImportError:
+        yt_dlp_executable = shutil.which("yt-dlp")
+        if yt_dlp_executable:
+            cmd = [yt_dlp_executable]
+        else:
             raise RuntimeError(
                 "yt-dlp is not installed in this Python environment. "
                 "Please run 'pip install yt-dlp' or 'pip install -r backend/requirements.txt'."
