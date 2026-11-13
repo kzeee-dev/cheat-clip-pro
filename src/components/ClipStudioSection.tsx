@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { StudioTimeline } from './StudioTimeline';
+import { ProCaptionControls, DEFAULT_PRO_CAPTION_SETTINGS, getAiHighlightWords } from './ProCaptionControls';
 import { 
   AlertTriangle, 
   RefreshCw, 
@@ -41,6 +42,7 @@ import type {
   HardwareAccelInfo,
   FontItem,
   TranscriptLine,
+  ProCaptionSettings,
 } from '../types';
 
 interface CaptionWord {
@@ -284,6 +286,7 @@ export interface StudioPreferences {
   fileNameSuffix?: string;
   titlePrefix?: string;
   titleSuffix?: string;
+  proCaption?: ProCaptionSettings;
 }
 
 export const DEFAULT_STUDIO_PREFS: Required<StudioPreferences> = {
@@ -321,6 +324,7 @@ export const DEFAULT_STUDIO_PREFS: Required<StudioPreferences> = {
   fileNameSuffix: '',
   titlePrefix: '',
   titleSuffix: '',
+  proCaption: DEFAULT_PRO_CAPTION_SETTINGS,
 };
 
 function getSavedStudioPreferences(): Partial<StudioPreferences> {
@@ -490,6 +494,8 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
   const [titleFontSizePx, setTitleFontSizePx] = useState<number>(() => getSavedStudioPreferences().titleFontSizePx ?? DEFAULT_STUDIO_PREFS.titleFontSizePx);
   const [textCase, setTextCase] = useState<TextCaseOption>(() => getSavedStudioPreferences().textCase ?? DEFAULT_STUDIO_PREFS.textCase);
   const [titleTextCase, setTitleTextCase] = useState<TextCaseOption>(() => getSavedStudioPreferences().titleTextCase ?? DEFAULT_STUDIO_PREFS.titleTextCase);
+  const [proCaption, setProCaption] = useState<ProCaptionSettings>(() => ({ ...DEFAULT_PRO_CAPTION_SETTINGS, ...(getSavedStudioPreferences().proCaption || {}) }));
+  const aiHighlightWords = useMemo(() => getAiHighlightWords(transcript, proCaption), [transcript, proCaption]);
 
   // Multi-Segment Merged Render Mode
   const [renderMode, setRenderMode] = useState<'separate' | 'merged'>(() => getSavedStudioPreferences().renderMode ?? DEFAULT_STUDIO_PREFS.renderMode);
@@ -1923,6 +1929,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
       titleFontSizePx,
       textCase,
       titleTextCase,
+      proCaption,
       subtitlePositionMode,
       titleDuration,
       originalAudioVolume,
@@ -1961,6 +1968,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
     titleFontSizePx,
     textCase,
     titleTextCase,
+    proCaption,
     subtitlePositionMode,
     titleDuration,
     originalAudioVolume,
@@ -1996,6 +2004,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
     setTitleFontSizePx(DEFAULT_STUDIO_PREFS.titleFontSizePx);
     setTextCase(DEFAULT_STUDIO_PREFS.textCase);
     setTitleTextCase(DEFAULT_STUDIO_PREFS.titleTextCase);
+    setProCaption(DEFAULT_PRO_CAPTION_SETTINGS);
     setSubtitlePositionMode(DEFAULT_STUDIO_PREFS.subtitlePositionMode);
     setTitleDuration(DEFAULT_STUDIO_PREFS.titleDuration);
     setOriginalAudioVolume(DEFAULT_STUDIO_PREFS.originalAudioVolume);
@@ -2097,6 +2106,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
       // Multi-Segment Merged Highlight Video
       renderMode,
       compilationTitle: compilationTitle.trim() || undefined,
+      proCaption: { ...proCaption, aiHighlightWords },
     });
   };
 
@@ -3139,6 +3149,8 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                 <span className="caption-style-sub">{t.studio.styleNoneSub}</span>
               </button>
             </div>
+
+            {captionStyle !== 'none' && <ProCaptionControls value={proCaption} transcript={transcript} onChange={setProCaption} />}
 
             {captionStyle !== 'none' && (
               <>
@@ -5075,10 +5087,15 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                           const minPx = 4;
                           return `${Math.max(minPx, px)}px`;
                         })(),
-                        fontWeight: 800,
-                        letterSpacing: '0.03em',
+                        fontWeight: proCaption.textWeight === 'normal' ? 500 : proCaption.textWeight === 'black' ? 900 : 800,
+                        letterSpacing: `${0.03 + proCaption.textLetterSpacing / 100}em`,
+                        transform: `scale(${proCaption.textScale / 100})`,
                         textAlign: 'center',
-                        textShadow: '0 0 2px #000, 0 1px 3px rgba(0,0,0,0.95), 0 0 5px rgba(0,0,0,0.8)',
+                        textShadow: `0 0 ${Math.max(2, proCaption.textGlow * 2)}px ${proCaption.aiHighlightColor}88, 0 1px ${Math.max(3, proCaption.textShadow * 2)}px rgba(0,0,0,0.95)`,
+                        WebkitTextStroke: `${Math.max(0, proCaption.textOutline / 5)}px #111111`,
+                        background: proCaption.textBackground ? `rgba(0,0,0,${proCaption.textBackgroundOpacity / 100})` : 'transparent',
+                        borderRadius: proCaption.textBackground ? '8px' : '0',
+                        padding: proCaption.textBackground ? '0.12em 0.35em' : 0,
                         display: 'inline-block',
                       }}
                     >
@@ -5086,18 +5103,24 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                         activeCaption.chunk.words.map((w, idx) => {
                           const isActive = idx === activeCaption.activeWordIndex;
                           const currentStyle = CAPTION_STYLE_CONFIG[captionStyle] || CAPTION_STYLE_CONFIG.viral_pop;
-                          const color = isActive ? currentStyle.highlight : '#ffffff';
+                          const normalizedWord = w.text.toLocaleLowerCase().replace(/^[^\\p{L}\\p{N}]+|[^\\p{L}\\p{N}]+$/gu, '');
+                          const isKeyword = proCaption.aiHighlightEnabled && aiHighlightWords.includes(normalizedWord);
+                          const color = isKeyword ? proCaption.aiHighlightColor : isActive ? currentStyle.highlight : '#ffffff';
                           return (
                             <React.Fragment key={idx}>
                               {idx > 0 && ' '}
                               <span
                                 style={{
-                                  color,
-                                  transform: isActive ? 'scale(1.08)' : 'scale(1)',
+                                  color: proCaption.textGradient && (isKeyword || isActive) ? 'transparent' : color,
+                                  backgroundImage: proCaption.textGradient && (isKeyword || isActive) ? `linear-gradient(90deg, ${proCaption.textGradientStart}, ${proCaption.textGradientEnd})` : undefined,
+                                  backgroundClip: proCaption.textGradient && (isKeyword || isActive) ? 'text' : undefined,
+                                  WebkitBackgroundClip: proCaption.textGradient && (isKeyword || isActive) ? 'text' : undefined,
+                                  transform: isActive ? `scale(${Math.max(1.08, proCaption.textScale / 100)})` : 'scale(1)',
                                   display: 'inline-block',
                                   transition: 'transform 0.08s ease, color 0.08s ease',
-                                  textShadow: isActive
-                                    ? `0 0 3px #000, 0 1px 4px rgba(0,0,0,0.95), 0 0 8px ${currentStyle.highlight}88`
+                                  animation: isActive && proCaption.motionPreset !== 'none' ? `ccp-motion-${proCaption.motionPreset} ${Math.max(0.12, 0.32 / proCaption.motionSpeed)}s ease-out both` : undefined,
+                                  textShadow: isActive || isKeyword
+                                    ? `0 0 ${Math.max(3, proCaption.textGlow * 2)}px ${color}99, 0 1px ${Math.max(4, proCaption.textShadow * 2)}px rgba(0,0,0,0.95)`
                                     : '0 0 2px #000, 0 1px 3px rgba(0,0,0,0.95), 0 0 5px rgba(0,0,0,0.8)',
                                 }}
                               >
