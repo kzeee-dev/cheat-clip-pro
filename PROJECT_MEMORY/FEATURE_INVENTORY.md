@@ -30,3 +30,11 @@ Status legend:
 ## Important regression rule
 A feature is not considered verified merely because it appears in this inventory.
 Record the exact test and result in SESSION_LOG.md or REGRESSION_CHECKLIST.md.
+
+
+## Auto Clipper Studio — work branch implementation (2026-11-13)
+- Caption Motion Lab panel — IMPLEMENTED; CI/device verification pending.
+- Smart keyword highlight suggestions from AI key quotes and transcript context — IMPLEMENTED; original transcript is presentation-only and unchanged.
+- Manual keyword overrides and custom highlight color — IMPLEMENTED; verification pending.
+- Motion presets: Static, Cinematic, Punch Impact, Smooth Pop, Kinetic Flow, Bounce Pro, Glitch Pro, Type Reveal, Slide Motion, Focus Zoom — IMPLEMENTED in ASS renderer; verification pending.
+- Advanced caption stroke, shadow, glow, background box/opacity, and letter spacing — IMPLEMENTED in ASS renderer; verification pending.
