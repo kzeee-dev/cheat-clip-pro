@@ -269,6 +269,7 @@ async def save_client_download(
         ".ogg": "audio/ogg",
         ".aac": "audio/aac",
         ".flac": "audio/flac",
+        ".zip": "application/zip",
     }
     if extension not in allowed_types:
         raise HTTPException(status_code=400, detail="Unsupported download file type")
@@ -332,7 +333,7 @@ def download_client_file(file_name: str, title: Optional[str] = None):
         ".webm": "video/webm", ".avi": "video/x-msvideo", ".m4v": "video/x-m4v",
         ".flv": "video/x-flv", ".wmv": "video/x-ms-wmv", ".wav": "audio/wav",
         ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".ogg": "audio/ogg",
-        ".aac": "audio/aac", ".flac": "audio/flac",
+        ".aac": "audio/aac", ".flac": "audio/flac", ".zip": "application/zip",
     }
     clean_title = re.sub(r'[\\/*?:"<>|]', "", (title or "").strip()) if title else ""
     download_name = f"{clean_title}{extension}" if clean_title else safe_name
