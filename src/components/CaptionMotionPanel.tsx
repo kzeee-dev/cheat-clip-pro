@@ -34,7 +34,7 @@ const COLORS = [
 ];
 
 export const CaptionMotionPanel: React.FC<Props> = ({ value, onChange, clips, transcript }) => {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(() => typeof window === 'undefined' || !window.matchMedia('(orientation: landscape) and (max-height: 620px)').matches);
   const [draftTerm, setDraftTerm] = useState('');
   const suggestions = useMemo(() => suggestCaptionHighlights(clips, transcript), [clips, transcript]);
   const previewHighlightColor = COLORS.find(color => color.value === value.highlightColor)?.value || '#FFE600';
