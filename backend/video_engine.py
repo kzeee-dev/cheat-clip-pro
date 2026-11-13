@@ -2413,6 +2413,51 @@ def escape_ass_text(text: str) -> str:
     return str(text).replace("{", "｛").replace("}", "｝").replace("\\", "＼")
 
 
+def _safe_caption_float(value: Any, default: float, minimum: float, maximum: float) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = default
+    return max(minimum, min(maximum, number))
+
+
+def build_caption_motion_tags(config: Optional[Dict[str, Any]] = None) -> str:
+    """Return bounded ASS animation tags for a supported caption motion preset."""
+    config = config if isinstance(config, dict) else {}
+    preset = str(config.get("motion_preset", "none")).lower()
+    intensity = _safe_caption_float(config.get("motion_intensity", 55), 55, 0, 100) / 100.0
+    speed = _safe_caption_float(config.get("motion_speed", 1.0), 1.0, 0.5, 2.0)
+    supported = {
+        "cinematic", "punch_impact", "smooth_pop", "kinetic_flow", "bounce_pro",
+        "glitch_pro", "type_reveal", "slide_motion", "focus_zoom"
+    }
+    if preset not in supported or intensity <= 0:
+        return ""
+
+    fade_in = max(25, int(150 / speed * max(0.35, intensity)))
+    fade_out = max(25, int(110 / speed * max(0.35, intensity)))
+    small = max(1, int(4 * intensity))
+    medium = max(2, int(9 * intensity))
+    settle = max(70, int(170 / speed))
+    if preset == "cinematic":
+        return f"\\fad({fade_in + 50},{fade_out + 35})\\blur{1.2 * intensity:.1f}\\t(0,{settle},\\blur0)"
+    if preset == "punch_impact":
+        return f"\\fad({fade_in},{fade_out})\\fscx{100-small*2}\\fscy{100-small*2}\\t(0,{settle//2},\\fscx{100+medium}\\fscy{100+medium})\\t({settle//2},{settle},\\fscx100\\fscy100)"
+    if preset == "smooth_pop":
+        return f"\\fad({fade_in},{fade_out})\\fscx{100-small}\\fscy{100-small}\\t(0,{settle},\\fscx100\\fscy100)"
+    if preset == "kinetic_flow":
+        return f"\\fad({fade_in},{fade_out})\\fsp{1.5 * intensity:.1f}\\t(0,{settle},\\fsp0)"
+    if preset == "bounce_pro":
+        return f"\\fad({fade_in},{fade_out})\\fscy{100-medium*2}\\t(0,{settle//2},\\fscy{100+medium})\\t({settle//2},{settle},\\fscy100)"
+    if preset == "glitch_pro":
+        return f"\\fad({max(20,fade_in//2)},{fade_out})\\blur{2.0 * intensity:.1f}\\t(0,{max(60,settle//2)},\\blur0)"
+    if preset == "type_reveal":
+        return f"\\fad(25,{fade_out})\\fscx{max(40,100-medium*5)}\\t(0,{settle},\\fscx100)"
+    if preset == "slide_motion":
+        return f"\\fad({fade_in},{fade_out})\\fscx{100-medium*2}\\t(0,{settle},\\fscx100)"
+    return f"\\fad({fade_in+25},{fade_out})\\blur{2.5 * intensity:.1f}\\fscx{100-small}\\fscy{100-small}\\t(0,{settle+40},\\blur0\\fscx100\\fscy100)"
+
+
 def generate_ass_file(
     words: List[Dict[str, Any]],
     style_preset: str,
@@ -2437,7 +2482,8 @@ def generate_ass_file(
     title_font_size_px: Optional[int] = None,
     title_text_case: Optional[str] = None,
     title_x_percent: Optional[float] = 50.0,
-    subtitle_offset_seconds: Optional[float] = 0.0
+    subtitle_offset_seconds: Optional[float] = 0.0,
+    caption_motion: Optional[Dict[str, Any]] = None
 ) -> str:
     """
     Generates an Advanced SubStation Alpha (.ass) subtitle and title file with karaoke / word-level animation.
@@ -2660,6 +2706,35 @@ def generate_ass_file(
         outline_w = 3.6
         shadow_w = 1.8
 
+    # Validate user-controlled caption effects before writing ASS style or event tags.
+    motion_config = caption_motion if isinstance(caption_motion, dict) else {}
+    outline_w = _safe_caption_float(motion_config.get("outline_width", outline_w), outline_w, 0, 9)
+    shadow_w = _safe_caption_float(motion_config.get("shadow_depth", shadow_w), shadow_w, 0, 8)
+    glow_strength = _safe_caption_float(motion_config.get("glow_strength", 0), 0, 0, 5)
+    letter_spacing = _safe_caption_float(motion_config.get("letter_spacing", 0), 0, -1, 5)
+    background_box = bool(motion_config.get("background_box", False))
+    background_opacity = int(_safe_caption_float(motion_config.get("background_opacity", 72), 72, 10, 100))
+    if background_box:
+        alpha = max(0, min(255, int(round(255 * (1 - background_opacity / 100.0)))))
+        back_color = f"&H{alpha:02X}000000"
+    sub_border_style = 3 if background_box else 1
+    motion_tags = build_caption_motion_tags(motion_config)
+    glow_tag = f"\\blur{glow_strength:.1f}" if glow_strength > 0 else ""
+
+    raw_highlight_color = str(motion_config.get("highlight_color", "")).lstrip("#")
+    if len(raw_highlight_color) == 6 and all(ch in "0123456789abcdefABCDEF" for ch in raw_highlight_color):
+        rr, gg, bb = raw_highlight_color[0:2], raw_highlight_color[2:4], raw_highlight_color[4:6]
+        highlight_color = f"&H00{bb.upper()}{gg.upper()}{rr.upper()}"
+    smart_highlight_color = highlight_color
+
+    highlight_terms = set()
+    raw_terms = motion_config.get("highlight_terms", [])
+    if isinstance(raw_terms, list):
+        for term in raw_terms[:40]:
+            normalized = re.sub(r"[^\w]", "", str(term).casefold())
+            if 3 <= len(normalized) <= 32:
+                highlight_terms.add(normalized)
+
     # Title styling: clean transparent background across ALL formats (no black box border)
     title_box_back = "&H00000000"
     title_border_style = 1
@@ -2675,7 +2750,7 @@ Collisions: Reverse
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: TitleStyle,{title_font_name or font_name},{title_font_size},&H00FFFFFF,&H000000FF,&H00000000,{title_box_back},-1,0,0,0,100,100,0,0,{title_border_style},4.4,2.0,8,40,40,0,1
-Style: SubStyle,{font_name},{sub_font_size},{primary_color},&H000000FF,{outline_color},{back_color},-1,0,0,0,100,100,0,0,1,{outline_w},{shadow_w},2,40,40,0,1
+Style: SubStyle,{font_name},{sub_font_size},{primary_color},&H000000FF,{outline_color},{back_color},-1,0,0,0,100,100,{letter_spacing},0,{sub_border_style},{outline_w},{shadow_w},2,40,40,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -2792,15 +2867,20 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 for idx, item in enumerate(chunk):
                     w_txt = item["word_text"]
                     if idx == active_idx:
-                        # Highlight active word with color only (no font scale or bold toggle so metrics stay 100% identical)
-                        line_parts.append(r"{\c" + highlight_color + r"\3c" + outline_color + r"}" + w_txt + r"{\c" + primary_color + r"\3c" + outline_color + r"}")
+                        raw_word = item.get("raw", {}).get("word", "")
+                        normalized_word = re.sub(r"[^\w]", "", str(raw_word).casefold())
+                        if normalized_word in highlight_terms:
+                            line_parts.append(r"{\b1\c" + smart_highlight_color + r"\3c" + outline_color + r"}" + w_txt + r"{\b0\c" + primary_color + r"\3c" + outline_color + r"}")
+                        else:
+                            # Preserve the original karaoke highlight for ordinary active words.
+                            line_parts.append(r"{\c" + highlight_color + r"\3c" + outline_color + r"}" + w_txt + r"{\c" + primary_color + r"\3c" + outline_color + r"}")
                     else:
                         line_parts.append(w_txt)
 
                 styled_line = " ".join(line_parts)
                 # Lock position to sub_y with \q2\an{sub_align}\pos(center_x, sub_y)
                 events.append(
-                    f"Dialogue: 0,{format_ass_timestamp(w_start)},{format_ass_timestamp(w_end)},SubStyle,,0,0,0,,{{\\q2\\an{sub_align}\\pos({center_x},{sub_y})}}{styled_line}"
+                    f"Dialogue: 0,{format_ass_timestamp(w_start)},{format_ass_timestamp(w_end)},SubStyle,,0,0,0,,{{\\q2\\an{sub_align}\\pos({center_x},{sub_y}){motion_tags}{glow_tag}}}{styled_line}"
                 )
 
     ass_content = ass_header + "\n".join(events) + "\n"
