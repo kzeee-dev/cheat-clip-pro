@@ -9,8 +9,10 @@ export const DEFAULT_PRO_CAPTION_SETTINGS: ProCaptionSettings = {
   aiHighlightExcludedWords: '',
   motionPreset: 'none',
   motionSpeed: 1,
+  motionDurationMs: 280,
   motionIntensity: 72,
   motionDelayMs: 0,
+  motionScope: 'word',
   motionEasing: 'ease-out',
   textOutline: 4.8,
   textShadow: 2,
@@ -154,8 +156,10 @@ export const ProCaptionControls: React.FC<Props> = ({ value, transcript, onChang
         </select>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
           <div><label style={label}><span>Speed</span><strong>{value.motionSpeed.toFixed(1)}×</strong></label><input style={input} type="range" min=".5" max="2" step=".1" value={value.motionSpeed} onChange={e => update('motionSpeed', Number(e.target.value))} /></div>
+          <div><label style={label}><span>Duration</span><strong>{value.motionDurationMs} ms</strong></label><input style={input} type="range" min="100" max="800" step="10" value={value.motionDurationMs} onChange={e => update('motionDurationMs', Number(e.target.value))} /></div>
           <div><label style={label}><span>Intensity</span><strong>{value.motionIntensity}%</strong></label><input style={input} type="range" min="0" max="100" value={value.motionIntensity} onChange={e => update('motionIntensity', Number(e.target.value))} /></div>
           <div><label style={label}><span>Delay</span><strong>{value.motionDelayMs} ms</strong></label><input style={input} type="range" min="0" max="500" step="10" value={value.motionDelayMs} onChange={e => update('motionDelayMs', Number(e.target.value))} /></div>
+          <div><label style={{ ...label, display: 'block' }}>Scope</label><select style={select} value={value.motionScope} onChange={e => update('motionScope', e.target.value as ProCaptionSettings['motionScope'])}><option value="word">Per word</option><option value="line">Per line</option></select></div>
           <div><label style={{ ...label, display: 'block' }}>Easing</label><select style={select} value={value.motionEasing} onChange={e => update('motionEasing', e.target.value as ProCaptionSettings['motionEasing'])}><option value="linear">Linear</option><option value="ease-in">Ease In</option><option value="ease-out">Ease Out</option><option value="ease-in-out">Ease In Out</option><option value="bounce">Bounce</option></select></div>
         </div>
       </div>
