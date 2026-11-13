@@ -15,9 +15,9 @@ class ViralClip(BaseModel):
     score_reason: str = Field(default="", description="Short evidence-based explanation for the overall score in the transcript language")
     key_quotes: List[str] = Field(description="1-2 key quotes from the clip")
     transcript: str = Field(description="Spoken text of the clip")
-    title_suggestion: str = Field(default="", description="Catchy alternative title suggestion. MUST NEVER use first-person pronouns ('I', 'me', 'my'). Attribute to speaker or objective topic.")
-    caption_suggestion: str = Field(default="", description="Engaging social media caption suggestion attributing quotes or insights to the speaker.")
-    hashtag_suggestion: str = Field(default="", description="Relevant hashtags suggestion (e.g. #hashtag1 #hashtag2)")
+    title_suggestion: str = Field(default="", description="A distinct, specific, compelling alternative title under 8 words, grounded in this clip. Avoid generic placeholders, invented claims, and first-person narration. Match the video language.")
+    caption_suggestion: str = Field(default="", description="Natural, polished 1-2 sentence social caption with a strong relevant opening and a concrete clip detail or takeaway. No filler, generic templates, invented claims, or first-person editor voice. Match the video language.")
+    hashtag_suggestion: str = Field(default="", description="Provide 3-6 distinct, focused hashtags relevant to this clip topic. No duplicates, spam tags, or unrelated generic hashtags. Match the video language.")
 
 class ViralClipGemini(BaseModel):
     title: str = Field(description="Catchy clip title, max 8 words, in the EXACT SAME LANGUAGE as the video transcript (STRICT ZERO-TRANSLATION RULE: English is English, Indonesian is Indonesian, Spanish is Spanish). NEVER use first-person pronouns ('I', 'me', 'my', 'myself', 'aku', 'saya'). Attribute to the person speaking by name, host/guest title, or use third-person objective framing so it does not look like the user's opinion.")
@@ -32,9 +32,9 @@ class ViralClipGemini(BaseModel):
     shareability: int = Field(default=0, ge=0, le=100, description="Likelihood viewers would share or discuss this moment, 0-100")
     score_reason: str = Field(default="", description="Short evidence-based explanation for the overall score in the transcript language")
     key_quotes: List[str] = Field(description="1-2 verbatim quotes directly spoken in the clip, in the original language of the video without translation")
-    title_suggestion: str = Field(default="", description="Catchy alternative title suggestion in the EXACT SAME LANGUAGE as the video transcript (DO NOT translate). STRICT RULE: NEVER use first-person ('I', 'me', 'my', 'saya', 'aku'). Attribute to the speaker/host/guest by name or topic.")
-    caption_suggestion: str = Field(default="", description="Engaging social media caption suggestion written in the EXACT SAME LANGUAGE as the video transcript (DO NOT translate to any other language), attributing insights or story to the speaker.")
-    hashtag_suggestion: str = Field(default="", description="Relevant hashtags suggestion in the SAME LANGUAGE as the video transcript (e.g. #hashtag1 #hashtag2)")
+    title_suggestion: str = Field(default="", description="A distinct, specific, compelling alternative title under 8 words in the EXACT SAME LANGUAGE as the video transcript. Avoid generic placeholders, invented claims, and first-person narration. Ground it in this clip.")
+    caption_suggestion: str = Field(default="", description="A natural, polished 1-2 sentence social caption in the EXACT SAME LANGUAGE as the video transcript, with a strong relevant opening and a concrete clip detail or takeaway. No filler, generic templates, invented claims, or first-person editor voice.")
+    hashtag_suggestion: str = Field(default="", description="Provide 3-6 distinct, focused hashtags relevant to this clip topic in the SAME LANGUAGE as the video transcript. No duplicates, spam tags, or unrelated generic hashtags.")
 
 class VideoAnalysis(BaseModel):
     summary: str = Field(description="1-2 sentence video summary in the EXACT SAME LANGUAGE as the video transcript (STRICT ZERO-TRANSLATION RULE: English stays English, Indonesian stays Indonesian, Spanish stays Spanish), followed by 2-4 relevant hashtags")

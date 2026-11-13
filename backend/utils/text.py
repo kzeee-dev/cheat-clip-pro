@@ -496,56 +496,117 @@ def validate_transcript_language(
 
 def sanitize_first_person_title(title: str, speaker_or_channel: str = "", lang: str = "en") -> str:
     """
-    Sanitizes accidental first-person perspective ('I', 'Me', 'My', 'Saya', 'Aku', 'Gue')
-    from generated clip titles and title suggestions, replacing them with speaker or channel attribution,
-    or objective framing so titles never appear as the user's personal opinion.
-    Preserves the target language (Indonesian, English, Spanish, etc.).
+    Conservatively removes first-person framing from generated clip titles.
+    Channel metadata is intentionally never treated as speaker identity.
+    Neutral titles are preserved unchanged.
     """
-    if not title:
+    if not title or not title.strip():
         return title
+
     t = title.strip()
-    speaker = speaker_or_channel.strip() if speaker_or_channel else ""
-    if lang == "id":
-        subject = speaker if speaker else "Host"
-    elif lang == "es":
-        subject = speaker if speaker else "El Presentador"
-    else:
-        subject = speaker if speaker else "The Speaker"
+    language = (lang or "en").lower().strip()
 
-    # 1. English Why / How / What / When / Where
-    t = re.sub(r"^why\s+i\s+think\b", f"{subject} Explains Why", t, flags=re.IGNORECASE)
-    t = re.sub(r"^why\s+i\s+believe\b", f"{subject} Explains Why", t, flags=re.IGNORECASE)
-    t = re.sub(r"^why\s+i\s+", f"Why {subject} ", t, flags=re.IGNORECASE)
-    t = re.sub(r"^how\s+i\s+", f"How {subject} ", t, flags=re.IGNORECASE)
-    t = re.sub(r"^what\s+i\s+think\b", f"{subject}'s Thoughts On", t, flags=re.IGNORECASE)
-    t = re.sub(r"^what\s+i\s+learned\b", f"What {subject} Learned", t, flags=re.IGNORECASE)
-    t = re.sub(r"^what\s+i\s+", f"What {subject} ", t, flags=re.IGNORECASE)
-    t = re.sub(r"^when\s+i\s+", f"When {subject} ", t, flags=re.IGNORECASE)
-    t = re.sub(r"^where\s+i\s+", f"Where {subject} ", t, flags=re.IGNORECASE)
+    if language == "en":
+        # Remove opinion framing without inventing a speaker.
+        t = re.sub(
+            r"^why\s+i\s+(?:think|believe)\s+",
+            "Why ",
+            t,
+            flags=re.IGNORECASE,
+        )
+        t = re.sub(
+            r"^what\s+i\s+think\s+(?:about\s+)?",
+            "Thoughts on ",
+            t,
+            flags=re.IGNORECASE,
+        )
+        t = re.sub(
+            r"^what\s+i\s+learned\s+",
+            "Lessons From ",
+            t,
+            flags=re.IGNORECASE,
+        )
 
-    # 2. English My [Noun] (e.g. My Opinion, My Story, My Regret)
-    t = re.sub(r"^my\s+([a-zA-Z]+)", lambda m: f"{subject}'s {m.group(1)}" if speaker else f"The {m.group(1)}", t, flags=re.IGNORECASE)
+        # Convert common first-person actions into neutral gerund titles.
+        gerunds = {
+            "tried": "Trying",
+            "found": "Finding",
+            "made": "Making",
+            "discovered": "Discovering",
+            "bought": "Buying",
+            "quit": "Quitting",
+            "lost": "Losing",
+            "learned": "Learning",
+            "realized": "Realizing",
+            "spent": "Spending",
+            "built": "Building",
+            "saw": "Seeing",
+            "went": "Going",
+            "started": "Starting",
+            "joined": "Joining",
+            "left": "Leaving",
+            "hate": "Hating",
+            "love": "Loving",
+        }
+        action_pattern = r"^i\s+(" + "|".join(gerunds) + r")\b\s*"
+        t = re.sub(
+            action_pattern,
+            lambda m: gerunds[m.group(1).lower()] + " ",
+            t,
+            count=1,
+            flags=re.IGNORECASE,
+        )
 
-    # 3. English First-person action verbs (e.g. I Tried, I Discovered, I Built)
-    t = re.sub(r"^i\s+(tried|found|made|discovered|bought|quit|lost|learned|realized|spent|built|saw|went|started|joined|left|hate|love)\b", rf"{subject} \1", t, flags=re.IGNORECASE)
-    t = re.sub(r"^i\s+was\b", f"{subject} Was", t, flags=re.IGNORECASE)
-    t = re.sub(r"^i\s+am\b", f"{subject} Is", t, flags=re.IGNORECASE)
-    t = re.sub(r"^i\s+have\b", f"{subject} Has", t, flags=re.IGNORECASE)
-    t = re.sub(r"^i\s+had\b", f"{subject} Had", t, flags=re.IGNORECASE)
-    t = re.sub(r"^i\s+got\b", f"{subject} Got", t, flags=re.IGNORECASE)
-    t = re.sub(r"^i\s+think\b", f"{subject} Thinks", t, flags=re.IGNORECASE)
-    t = re.sub(r"^i\s+believe\b", f"{subject} Believes", t, flags=re.IGNORECASE)
+        # "How I built..." becomes a natural topic-focused title.
+        t = re.sub(
+            r"^how\s+i\s+built\s+",
+            "Building ",
+            t,
+            count=1,
+            flags=re.IGNORECASE,
+        )
 
-    # 4. Indonesian / Malay first-person replacements (Saya, Aku, Gue, Gw)
-    indo_subject = speaker if speaker else "Host"
-    t = re.sub(r"^(kenapa|mengapa)\s+(saya|aku|gue|gw)\s+", rf"\1 {indo_subject} ", t, flags=re.IGNORECASE)
-    t = re.sub(r"^(cara|bagaimana)\s+(saya|aku|gue|gw)\s+", rf"Cara {indo_subject} ", t, flags=re.IGNORECASE)
-    t = re.sub(r"^(alasan)\s+(saya|aku|gue|gw)\s+", rf"Alasan {indo_subject} ", t, flags=re.IGNORECASE)
-    t = re.sub(r"^(saya|aku|gue|gw)\s+(mencoba|menemukan|membuat|yakin|berpikir|menyesal|kehilangan|belajar|mulai|berhenti)\b", rf"{indo_subject} \2", t, flags=re.IGNORECASE)
-    t = re.sub(r"^(pendapat|opini)\s+(saya|aku|gue|gw)\b", rf"Opini {indo_subject}", t, flags=re.IGNORECASE)
+        # Remove possessive first-person framing.
+        t = re.sub(r"^my\s+", "The ", t, count=1, flags=re.IGNORECASE)
+
+    elif language == "id":
+        # Keep the original question or instructional framing.
+        t = re.sub(
+            r"^(kenapa|mengapa)\s+(saya|aku|gue|gw)\s+",
+            r"\1 ",
+            t,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+        t = re.sub(
+            r"^(cara|bagaimana|alasan)\s+(saya|aku|gue|gw)\s+",
+            r"\1 ",
+            t,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+
+        # Remove first-person subjects without adding an invented identity.
+        t = re.sub(
+            r"^(saya|aku|gue|gw)\s+",
+            "",
+            t,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+        t = re.sub(
+            r"^(pendapat|opini)\s+(saya|aku|gue|gw)\b",
+            r"\1",
+            t,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+
+    # Preserve neutral titles exactly; capitalize only when a rewrite occurred.
+    if t != title.strip() and t:
+        t = t[0].upper() + t[1:]
 
     return t.strip()
-
 
 def is_safe_remote_url(url: str, allowed_domains: Optional[set] = None) -> bool:
     """

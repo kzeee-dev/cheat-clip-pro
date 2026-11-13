@@ -3,7 +3,9 @@ package com.kzeee.cheatclippro;
 import android.app.DownloadManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.ActivityNotFoundException;
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.database.Cursor;
@@ -28,6 +30,11 @@ public class MainActivity extends BridgeActivity {
 
     private DownloadManager downloadManager;
     private boolean receiverRegistered = false;
+    private static final int REQUEST_POST_NOTIFICATIONS = 7301;
+    private String pendingDownloadUrl;
+    private String pendingContentDisposition;
+    private String pendingMimeType;
+    private String pendingUserAgent;
 
     private final BroadcastReceiver downloadReceiver = new BroadcastReceiver() {
         @Override
@@ -57,26 +64,129 @@ public class MainActivity extends BridgeActivity {
 
         WebView webView = getBridge().getWebView();
         webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> {
-            try {
-                Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-                browserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                browserIntent.setPackage("com.android.chrome");
-
-                try {
-                    startActivity(browserIntent);
-                } catch (ActivityNotFoundException chromeNotInstalled) {
-                    browserIntent.setPackage(null);
-                    startActivity(browserIntent);
-                }
-            } catch (Exception error) {
-                Log.e(TAG, "Could not open download in browser", error);
-                Toast.makeText(
-                    this,
-                    "Tidak bisa membuka tautan download: " + error.getMessage(),
-                    Toast.LENGTH_LONG
-                ).show();
-            }
+            startOrRequestDownload(url, userAgent, contentDisposition, mimeType);
         });
+    }
+
+
+    private void startOrRequestDownload(
+        String url,
+        String userAgent,
+        String contentDisposition,
+        String mimeType
+    ) {
+        if (Build.VERSION.SDK_INT >= 33
+            && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            pendingDownloadUrl = url;
+            pendingUserAgent = userAgent;
+            pendingContentDisposition = contentDisposition;
+            pendingMimeType = mimeType;
+
+            requestPermissions(
+                new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                REQUEST_POST_NOTIFICATIONS
+            );
+            return;
+        }
+
+        enqueueNativeDownload(url, userAgent, contentDisposition, mimeType);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(
+        int requestCode,
+        String[] permissions,
+        int[] grantResults
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode == REQUEST_POST_NOTIFICATIONS) {
+            String url = pendingDownloadUrl;
+            String userAgent = pendingUserAgent;
+            String disposition = pendingContentDisposition;
+            String mimeType = pendingMimeType;
+
+            pendingDownloadUrl = null;
+            pendingUserAgent = null;
+            pendingContentDisposition = null;
+            pendingMimeType = null;
+
+            // Download tetap berjalan meskipun izin notifikasi ditolak.
+            if (url != null) {
+                enqueueNativeDownload(url, userAgent, disposition, mimeType);
+            }
+        }
+    }
+
+    private void enqueueNativeDownload(
+        String url,
+        String userAgent,
+        String contentDisposition,
+        String mimeType
+    ) {
+        try {
+            Uri uri = Uri.parse(url);
+            String scheme = uri.getScheme();
+            if (!"http".equalsIgnoreCase(scheme)
+                && !"https".equalsIgnoreCase(scheme)) {
+                throw new IllegalArgumentException("URL download bukan HTTP/HTTPS");
+            }
+
+            if (downloadManager == null) {
+                throw new IllegalStateException("DownloadManager tidak tersedia");
+            }
+
+            String filename = URLUtil.guessFileName(url, contentDisposition, mimeType);
+            filename = filename.replaceAll("[\\\\/:*?\"<>|]", "_").trim();
+            if (filename.isEmpty()) filename = "cheat_clip_video.mp4";
+
+            DownloadManager.Request request = new DownloadManager.Request(uri);
+            request.setTitle(filename);
+            request.setDescription("Mengunduh video dari Cheat Clip Pro");
+            request.setNotificationVisibility(
+                DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+            );
+            request.setDestinationInExternalPublicDir(
+                Environment.DIRECTORY_DOWNLOADS,
+                filename
+            );
+
+            if (mimeType != null && !mimeType.trim().isEmpty()) {
+                request.setMimeType(mimeType);
+            }
+
+            if (userAgent != null && !userAgent.trim().isEmpty()) {
+                request.addRequestHeader("User-Agent", userAgent);
+            }
+
+            String cookie = CookieManager.getInstance().getCookie(url);
+            if (cookie != null && !cookie.trim().isEmpty()) {
+                request.addRequestHeader("Cookie", cookie);
+            }
+
+            long downloadId = downloadManager.enqueue(request);
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putLong(KEY_LAST_DOWNLOAD_ID, downloadId)
+                .apply();
+
+            Toast.makeText(
+                this,
+                "Download dimulai. Lihat notifikasi HP.",
+                Toast.LENGTH_SHORT
+            ).show();
+
+            Log.i(TAG, "Native download queued. id=" + downloadId
+                + ", filename=" + filename);
+        } catch (Exception error) {
+            Log.e(TAG, "Could not start native download", error);
+            Toast.makeText(
+                this,
+                "Gagal memulai download: " + error.getMessage(),
+                Toast.LENGTH_LONG
+            ).show();
+        }
     }
 
     @Override

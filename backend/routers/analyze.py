@@ -1622,6 +1622,16 @@ async def analyze_video(request: AnalyzeRequest):
             f"{'3. TRANSCRIPT MODE: Attribute statements only to speakers supported by the transcript or explicitly identified video context.\n' if has_transcript else '3. VISUAL-ONLY MODE: Do not identify visible people or infer names, jobs, titles, or roles from appearance, channel name, or metadata.\n'}"
             f"{'   - Use a speaker name only when explicitly supported by the transcript or video context.\n   - If identity is uncertain, use objective framing without naming or assigning a role.\n' if has_transcript else '   - Use neutral descriptions of visible people, objects, and settings only when directly supported by the frames.\n   - Do not attribute statements, opinions, dialogue, or expertise to anyone.\n'}"
             f"4. Keep titles concise, engaging, and under 8 words.\n\n"
+            f"CREATIVE SOCIAL COPYWRITING RULES (MANDATORY):\n"
+            f"- Make every title specific to the actual clip's strongest idea, surprising detail, useful insight, conflict, or memorable moment.\n"
+            f"- NEVER use generic placeholder titles such as 'Cuplikan Pilihan #5', 'Momen Terbaik', 'Video Menarik', or 'Clip 1'.\n"
+            f"- `title` and `title_suggestion` must use different wording or angles. Keep both concise, natural, compelling, and truthful.\n"
+            f"- `caption_suggestion` must sound like a polished human-written social caption: usually 1-2 concise sentences, with a natural hook and a concrete detail or takeaway from the clip.\n"
+            f"- Avoid filler, awkward wording, empty hype, repetitive templates, and first-person editor narration.\n"
+            f"- `hashtag_suggestion` must contain 3-6 distinct, focused hashtags relevant to the actual topic. Avoid duplicates and generic spam tags unless genuinely relevant.\n"
+            f"- Make captions and hashtag sets meaningfully different across clips.\n"
+            f"- Match the video's spoken language. Never invent names, events, claims, dialogue, or context. In visual-only mode, describe only what the supplied frames visibly support.\n"
+            f"\n"
             f"{'Transcript (start|end[|interest] text):' if has_transcript else 'Visual evidence: timestamped real video frames are attached; no transcript is available.'}\n---\n{transcript_text if has_transcript else '[No transcript available.]'}\n---\n\n"
             f"{'Rules: use exact seconds from transcript; clips must start/end at sentence boundaries; do not overlap.' if has_transcript else 'Rules: use attached frame timestamps only as approximate visual anchors. Do not claim exact event timing or infer motion between still frames. Choose conservative clip ranges within the requested bounds; do not invent events.'}\n"
             f"VIRAL INTELLIGENCE SCORING (MANDATORY, EVIDENCE-BASED):\n"
@@ -2090,36 +2100,138 @@ async def analyze_video(request: AnalyzeRequest):
                 seg_lines = [l['text'] for l in enriched_transcript if max(l['start'], st) < min(l['end'], et)]
                 seg_text = " ".join(seg_lines).strip()
                 preview = seg_text[:60] + "..." if len(seg_text) > 60 else seg_text or f"Viral Highlight #{i+1}"
-                if lang_code == 'id':
-                    fallback_clips_list.append({
-                        "title": f"Momen Menarik #{i+1}",
-                        "start_time": st,
-                        "end_time": et,
-                        "hook_time": st,
-                        "virality_score": max(70, int(95 - i * 5)),
-                        "key_quotes": [seg_text[:80]] if seg_text else [],
-                        "title_suggestion": f"Cuplikan Pilihan #{i+1}",
-                        "caption_suggestion": f"Momen terbaik dari video: {preview} #viral #trending",
-                        "hashtag_suggestion": "#viral #shorts #trending"
-                    })
-                else:
-                    fallback_clips_list.append({
-                        "title": f"Key Highlight #{i+1}",
-                        "start_time": st,
-                        "end_time": et,
-                        "hook_time": st,
-                        "virality_score": max(70, int(95 - i * 5)),
-                        "key_quotes": [seg_text[:80]] if seg_text else [],
-                        "title_suggestion": f"Must Watch Moment #{i+1}",
-                        "caption_suggestion": f"Key highlight from video: {preview} #viral #trending",
-                        "hashtag_suggestion": "#viral #shorts #trending"
-                    })
+                import re
+
+                # Build conservative, transcript-grounded fallback suggestions.
+                clean_text = re.sub(r"\s+", " ", seg_text).strip()
+                clean_text = re.sub(r"\[[^\]]*\]", "", clean_text).strip()
+
+                # Skip empty segments instead of inventing clip content.
+                if not clean_text:
+                    continue
+
+                stopwords = {
+                    "yang", "dan", "atau", "untuk", "dari", "dengan", "ini",
+                    "itu", "ada", "aja", "saja", "banget", "sudah", "udah",
+                    "belum", "akan", "jadi", "kalau", "kalo", "karena",
+                    "gimana", "bagaimana", "kenapa", "dimana", "mana",
+                    "sini", "situ", "sana", "saya", "aku", "kamu", "dia",
+                    "mereka", "kita", "kami", "lebih", "paling", "bisa",
+                    "deh", "dong", "nih", "sih", "lah", "kan", "ya",
+                    "the", "and", "for", "with", "this", "that", "from",
+                    "you", "your", "are", "was", "were", "have", "has",
+                    "seperti", "memang", "sangat", "cukup", "mungkin",
+                    "banyak", "bukan"
+                }
+
+                # Build a concise title from the actual transcript.
+                title_words = [
+                    word.strip(" ,.!?:;-")
+                    for word in clean_text.split()
+                ]
+                title_words = [word for word in title_words if word]
+
+                while title_words and title_words[0].lower() in stopwords:
+                    title_words.pop(0)
+
+                if not title_words:
+                    continue
+
+                title = " ".join(title_words[:7])
+                if len(title_words) > 7:
+                    title += "…"
+                title = title[:1].upper() + title[1:]
+
+                # Keep the caption grounded in the transcript.
+                sentences = re.split(r"(?<=[.!?])\s+", clean_text)
+
+                # Build a distinct alternative from another transcript phrase.
+                alternative_parts = list(sentences[1:])
+                if sentences:
+                    alternative_parts.extend(
+                        re.split(r"[,;:]\s+", sentences[0])[1:]
+                    )
+
+                title_suggestion = ""
+                for part in alternative_parts:
+                    alternative_words = [
+                        word.strip(" ,.!?:;-")
+                        for word in part.split()
+                    ]
+                    alternative_words = [
+                        word for word in alternative_words if word
+                    ]
+
+                    while (
+                        alternative_words
+                        and alternative_words[0].lower() in stopwords
+                    ):
+                        alternative_words.pop(0)
+
+                    if len(alternative_words) < 2:
+                        continue
+
+                    candidate_title = " ".join(alternative_words[:7])
+                    if len(alternative_words) > 7:
+                        candidate_title += "…"
+                    candidate_title = (
+                        candidate_title[:1].upper() + candidate_title[1:]
+                    )
+
+                    if candidate_title.casefold() != title.casefold():
+                        title_suggestion = candidate_title
+                        break
+                caption = " ".join(sentences[:2]).strip()
+
+                if len(caption) > 220:
+                    caption = caption[:220].rsplit(" ", 1)[0].rstrip(" ,.!?") + "…"
+                elif caption and caption[-1] not in ".!?":
+                    caption += "."
+
+                # Rank topic words by frequency; no forced generic hashtags.
+                word_counts = {}
+                first_seen = {}
+
+                for word in re.findall(r"[A-Za-zÀ-ÿ0-9]+", clean_text.lower()):
+                    if len(word) < 4 or word in stopwords or word.isdigit():
+                        continue
+
+                    word_counts[word] = word_counts.get(word, 0) + 1
+                    if word not in first_seen:
+                        first_seen[word] = len(first_seen)
+
+                ranked_words = sorted(
+                    word_counts,
+                    key=lambda word: (-word_counts[word], first_seen[word])
+                )
+                hashtag_text = " ".join(
+                    "#" + word for word in ranked_words[:5]
+                )
+
+                fallback_clips_list.append({
+                    "title": title,
+                    "start_time": st,
+                    "end_time": et,
+                    "hook_time": st,
+                    "virality_score": max(70, int(95 - i * 5)),
+                    "key_quotes": [clean_text[:80]],
+                    "title_suggestion": title_suggestion,
+                    "caption_suggestion": caption,
+                    "hashtag_suggestion": hashtag_text
+                })
+
             analysis_data['clips'] = fallback_clips_list
             if not analysis_data.get('summary'):
                 if lang_code == 'id':
-                    analysis_data['summary'] = f"Analisis video \"{title}\" menemukan {len(fallback_clips_list)} segmen cuplikan pilihan. #viral #highlights"
+                    analysis_data['summary'] = (
+                        f"Analisis menghasilkan {len(fallback_clips_list)} segmen "
+                        "berdasarkan transkrip yang tersedia."
+                    )
                 else:
-                    analysis_data['summary'] = f"Analysis of \"{title}\" identifying {len(fallback_clips_list)} key segments. #viral #highlights"
+                    analysis_data['summary'] = (
+                        f"Analysis produced {len(fallback_clips_list)} segments "
+                        "based on the available transcript."
+                    )
 
         clip_count = len(analysis_data.get('clips', []))
         yield _sse({
