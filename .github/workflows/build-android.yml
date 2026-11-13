@@ -8,6 +8,9 @@ on:
       - rebuild/smart-core-audit
       - integrate/visual-analysis-android
       - snapshot/phone-project-2026-11-13
+  pull_request:
+    branches:
+      - snapshot/phone-project-2026-11-13
 
 # Keep only the newest build per branch; older APK builds become obsolete
 # after each incremental source commit.
