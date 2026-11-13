@@ -102,6 +102,33 @@ export interface HardwareAccelInfo {
   }>;
 }
 
+export type CaptionMotionPreset =
+  | 'none'
+  | 'cinematic'
+  | 'punch_impact'
+  | 'smooth_pop'
+  | 'kinetic_flow'
+  | 'bounce_pro'
+  | 'glitch_pro'
+  | 'type_reveal'
+  | 'slide_motion'
+  | 'focus_zoom';
+
+export interface CaptionMotionSettings {
+  motionPreset: CaptionMotionPreset;
+  motionIntensity: number;
+  motionSpeed: number;
+  outlineWidth: number;
+  shadowDepth: number;
+  glowStrength: number;
+  backgroundBox: boolean;
+  backgroundOpacity: number;
+  letterSpacing: number;
+  highlightColor: string;
+  autoHighlight: boolean;
+  manualHighlightTerms: string[];
+}
+
 export interface RenderSettings {
   renderEngine?: 'server' | 'client';
   aspectRatio: AspectRatioOption;
@@ -122,6 +149,7 @@ export interface RenderSettings {
   titleTextCase?: TextCaseOption;
   subtitlesEnabled?: boolean;
   captionStyle: CaptionStyle;
+  captionMotion?: CaptionMotionSettings;
   captionFont: CaptionFont;
   fontSize: FontSizeOption;
   fontSizePx?: number;
