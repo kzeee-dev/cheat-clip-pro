@@ -85,3 +85,28 @@ No application source files were modified while creating this documentation.
 - No live backend or Android device runtime test performed.
 - Accepted baseline build #142 (`c48eb09`) remains untouched.
 - Other existing local changes and pending audit items remain preserved.
+
+
+## 2026-11-13 — Snapshot branch and Auto Clipper Studio foundation
+
+### Safe snapshot
+- Created branch `snapshot/phone-project-2026-11-13` from `integrate/visual-analysis-android` at `2abd079`.
+- Committed phone changes and project memory as `071c847`, then pushed the new branch to GitHub.
+- Added only the snapshot branch to the Android build workflow trigger. Existing branch filters and build steps were retained.
+
+### UI changes
+- Responsive layout rules added to `src/styles/studio-section.css` for mobile portrait, compact landscape, tablet, safe areas, touch controls and reduced motion.
+- Added `src/components/StudioTimeline.tsx` with video track, transcript caption markers, current playhead and click-to-seek behavior.
+- Integrated the timeline in `src/components/ClipStudioSection.tsx`; original range scrubber, preview player, caption pipeline and render settings remain in place.
+
+### CI verification
+- Run #168: initial snapshot APK build passed.
+- Run #169: responsive layout APK build passed.
+- Run #172: timeline integration APK build passed.
+- Latest artifact size: 4,027,844 bytes; SHA-256 `0b90ca0880d491acebe4989e232ee7baaa277a8fee62451315e8db8fbad49b21`.
+
+### Not yet verified
+- No physical Android device test has been performed in this session.
+- Timeline behavior on real video, landscape orientation, touch accuracy and full render/download regressions remain pending.
+- AI keyword classification, motion presets and advanced text effects have not yet been implemented.
+- No release APK or signing configuration was changed. Baseline branch `fix/media-source-resilience` remains untouched.
