@@ -17,6 +17,12 @@ android {
         }
     }
     buildTypes {
+        debug {
+            // Install the test build alongside the existing production app.
+            // This avoids replacing or uninstalling the user's release APK.
+            applicationIdSuffix ".debug"
+            versionNameSuffix "-debug"
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
