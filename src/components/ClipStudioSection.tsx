@@ -21,6 +21,8 @@ import { getStoredCookies, hasStoredCookies } from '../utils/cookieUtils';
 import { detectFaceClientSide } from '../utils/clientFaceDetector';
 import { isMobileDevice } from '../utils/deviceUtils';
 import { isWebCodecsGpuSupported, getClientGpuName } from '../services/webcodecsRenderer';
+import { CaptionMotionPanel } from './CaptionMotionPanel';
+import { DEFAULT_CAPTION_MOTION_SETTINGS } from '../utils/captionMotion';
 import type {
   ViralClip,
   RenderSettings,
@@ -40,6 +42,7 @@ import type {
   HardwareAccelInfo,
   FontItem,
   TranscriptLine,
+  CaptionMotionSettings,
 } from '../types';
 
 interface CaptionWord {
@@ -258,6 +261,7 @@ export interface StudioPreferences {
   facecamPosition?: FacecamPosition;
   titlePosition?: TitlePosition;
   captionStyle?: CaptionStyle;
+  captionMotion?: CaptionMotionSettings;
   captionFont?: CaptionFont;
   titleFont?: CaptionFont;
   fontSize?: FontSizeOption;
@@ -295,6 +299,7 @@ export const DEFAULT_STUDIO_PREFS: Required<StudioPreferences> = {
   facecamPosition: 'auto',
   titlePosition: 'auto',
   captionStyle: 'viral_pop',
+  captionMotion: DEFAULT_CAPTION_MOTION_SETTINGS,
   captionFont: 'Outfit',
   titleFont: 'Outfit',
   fontSize: 'medium',
@@ -477,6 +482,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
   const [customClipTitles, setCustomClipTitles] = useState<Record<string, string>>({});
   const [titlePosition, setTitlePosition] = useState<TitlePosition>(() => getSavedStudioPreferences().titlePosition ?? DEFAULT_STUDIO_PREFS.titlePosition);
   const [captionStyle, setCaptionStyle] = useState<CaptionStyle>(() => getSavedStudioPreferences().captionStyle ?? DEFAULT_STUDIO_PREFS.captionStyle);
+  const [captionMotion, setCaptionMotion] = useState<CaptionMotionSettings>(() => ({ ...DEFAULT_CAPTION_MOTION_SETTINGS, ...(getSavedStudioPreferences().captionMotion ?? {}) }));
   const [lastActiveCaptionStyle, setLastActiveCaptionStyle] = useState<CaptionStyle>(() => {
     const cap = getSavedStudioPreferences().captionStyle ?? DEFAULT_STUDIO_PREFS.captionStyle;
     return cap !== 'none' ? cap : 'viral_pop';
@@ -1914,6 +1920,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
       facecamPosition,
       titlePosition,
       captionStyle,
+      captionMotion,
       captionFont,
       titleFont,
       fontSize,
@@ -1952,6 +1959,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
     facecamPosition,
     titlePosition,
     captionStyle,
+    captionMotion,
     captionFont,
     titleFont,
     fontSize,
@@ -1986,6 +1994,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
     setFacecamPosition(DEFAULT_STUDIO_PREFS.facecamPosition);
     setTitlePosition(DEFAULT_STUDIO_PREFS.titlePosition);
     setCaptionStyle(DEFAULT_STUDIO_PREFS.captionStyle);
+    setCaptionMotion(DEFAULT_CAPTION_MOTION_SETTINGS);
     setLastActiveCaptionStyle(DEFAULT_STUDIO_PREFS.captionStyle);
     setCaptionFont(DEFAULT_STUDIO_PREFS.captionFont);
     setTitleFont(DEFAULT_STUDIO_PREFS.titleFont);
@@ -2055,6 +2064,7 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
       titleTextCase,
       subtitlesEnabled: captionStyle !== 'none',
       captionStyle,
+      captionMotion,
       captionFont,
       fontSize,
       fontSizePx,
@@ -2202,6 +2212,13 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
           )}
         </div>
       </div>
+
+      <CaptionMotionPanel
+        value={captionMotion}
+        onChange={setCaptionMotion}
+        clips={selectedClips.length > 0 ? selectedClips : allClips}
+        transcript={transcript}
+      />
 
       {/* Main Studio Grid: Controls (Left) + Real Image Live Preview (Right) */}
       <div className="studio-workspace-grid">
