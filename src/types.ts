@@ -119,7 +119,9 @@ export interface CaptionMotionSettings {
   motionIntensity: number;
   motionSpeed: number;
   outlineWidth: number;
+  useCustomOutline: boolean;
   shadowDepth: number;
+  useCustomShadow: boolean;
   glowStrength: number;
   backgroundBox: boolean;
   backgroundOpacity: number;
