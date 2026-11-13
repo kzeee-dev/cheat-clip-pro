@@ -17,6 +17,11 @@ android {
         }
     }
     buildTypes {
+        // Keep test APKs isolated from the installed production/release app.
+        // This suffix applies only to debug builds and leaves release identity/signing untouched.
+        debug {
+            applicationIdSuffix ".debug"
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
