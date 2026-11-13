@@ -1816,3 +1816,91 @@
   flex-shrink: 0;
 }
 
+
+
+/* Responsive editor workspace: preserve the preview and expose a side inspector in phone landscape. */
+@media screen and (orientation: landscape) and (max-height: 620px) and (max-width: 1100px) {
+  .clip-studio-page-section {
+    padding: .8rem;
+    padding-bottom: max(.8rem, env(safe-area-inset-bottom));
+  }
+
+  .studio-section-header {
+    gap: .55rem;
+    padding-bottom: .65rem;
+    margin-bottom: .75rem;
+  }
+
+  .studio-workspace-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 34%);
+    gap: .85rem;
+    align-items: start;
+  }
+
+  .studio-preview-pane {
+    position: relative;
+    top: auto;
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    order: 0;
+    max-height: calc(100svh - 105px);
+  }
+
+  .preview-sticky-wrap {
+    max-height: calc(100svh - 115px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .studio-controls-pane {
+    max-height: calc(100svh - 105px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: .25rem;
+  }
+
+  .studio-main-heading {
+    font-size: 1.05rem !important;
+  }
+
+  .caption-motion-panel {
+    margin-bottom: .7rem;
+  }
+
+  .cmp-body {
+    grid-template-columns: minmax(0, 1fr);
+    max-height: min(56svh, 420px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .cmp-highlight-card {
+    grid-column: auto;
+  }
+}
+
+/* Portrait phones keep the preview first and make the settings stack scroll naturally. */
+@media screen and (orientation: portrait) and (max-width: 760px) {
+  .clip-studio-page-section {
+    padding: .75rem;
+    padding-bottom: max(.75rem, env(safe-area-inset-bottom));
+  }
+
+  .studio-workspace-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: .85rem;
+  }
+
+  .studio-preview-pane {
+    order: -1;
+    position: relative;
+    top: auto;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .studio-controls-pane {
+    min-width: 0;
+  }
+}
