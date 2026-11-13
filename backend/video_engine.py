@@ -2893,16 +2893,30 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 line_parts = []
                 for idx, item in enumerate(chunk):
                     w_txt = item["word_text"]
-                    if idx == active_idx:
-                        # Highlight active word with color only (no font scale or bold toggle so metrics stay 100% identical)
+                    raw_word = re.sub(r"^[^\w]+|[^\w]+$", "", str(item["raw"].get("word", "")).lower())
+                    is_ai_keyword = bool(ai_highlight_enabled and raw_word in ai_words)
+                    if is_ai_keyword:
+                        if text_gradient and len(chunk) > 1:
+                            ratio = idx / max(1, len(chunk) - 1)
+                            sr, sg, sb = _hex_rgb(text_gradient_start)
+                            er, eg, eb = _hex_rgb(text_gradient_end)
+                            gradient_hex = "#{:02X}{:02X}{:02X}".format(round(sr + (er - sr) * ratio), round(sg + (eg - sg) * ratio), round(sb + (eb - sb) * ratio))
+                            word_color = _ass_color(_blend_with_white(gradient_hex, ai_highlight_intensity))
+                        else:
+                            word_color = ai_highlight_ass
+                        line_parts.append(r"{\c" + word_color + r"\3c" + outline_color + r"}" + w_txt + r"{\c" + primary_color + r"\3c" + outline_color + r"}")
+                    elif idx == active_idx:
+                        # Preserve the original word-by-word karaoke highlight.
                         line_parts.append(r"{\c" + highlight_color + r"\3c" + outline_color + r"}" + w_txt + r"{\c" + primary_color + r"\3c" + outline_color + r"}")
                     else:
                         line_parts.append(w_txt)
 
                 styled_line = " ".join(line_parts)
-                # Lock position to sub_y with \q2\an{sub_align}\pos(center_x, sub_y)
+                motion_override = _motion_override(active_idx)
+                glow_tag = f"\\blur{max(0.0, min(8.0, float(text_glow))):.1f}" if text_glow > 0 else ""
+                # Keep the existing fixed caption position; effects are applied within the ASS event.
                 events.append(
-                    f"Dialogue: 0,{format_ass_timestamp(w_start)},{format_ass_timestamp(w_end)},SubStyle,,0,0,0,,{{\\q2\\an{sub_align}\\pos({center_x},{sub_y})}}{styled_line}"
+                    f"Dialogue: 0,{format_ass_timestamp(w_start)},{format_ass_timestamp(w_end)},SubStyle,,0,0,0,,{{\\q2\\an{sub_align}\\pos({center_x},{sub_y}){glow_tag}}}{motion_override}{styled_line}"
                 )
 
     ass_content = ass_header + "\n".join(events) + "\n"
