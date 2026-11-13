@@ -62,3 +62,16 @@ These local changes are not part of commit c48eb09 unless later verified in Git 
 - Validation: three targeted behavior cases passed; `python -m py_compile backend/routers/analyze.py` passed; `git diff --check` passed.
 - No commit, APK build, live backend test, or Android device test performed.
 - Accepted baseline build #142 (`c48eb09`) remains untouched.
+
+
+## 2026-11-13 — Auto Clipper Studio caption motion foundation
+
+Branch: work/auto-clipper-studio
+
+- Added a collapsible Caption Motion Lab panel to the existing Studio workspace.
+- Added smart keyword suggestions sourced from AI-selected key quotes and transcript context; source transcript text is not modified.
+- Added manual highlight terms, selectable highlight color, nine motion presets plus static mode, and adjustable outline, shadow, glow, background box, opacity, and letter spacing.
+- Passed bounded caption motion settings through the render API into ASS generation so selected effects are baked into server-rendered MP4 captions.
+- Existing caption appearance and static motion remain the defaults; new motion/effects are opt-in.
+- Android release signing and release artifacts were not changed.
+- Status: implementation committed for CI build and regression verification; device runtime validation remains pending.
