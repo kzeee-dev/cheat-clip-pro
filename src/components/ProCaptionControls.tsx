@@ -14,8 +14,6 @@ export const DEFAULT_PRO_CAPTION_SETTINGS: ProCaptionSettings = {
   motionDelayMs: 0,
   motionScope: 'word',
   motionEasing: 'ease-out',
-  textOutline: 4.8,
-  textShadow: 2,
   textGlow: 0,
   textGradient: false,
   textGradientStart: '#FFE600',
@@ -167,8 +165,8 @@ export const ProCaptionControls: React.FC<Props> = ({ value, transcript, onChang
       <div style={card}>
         <strong style={{ fontSize: '.9rem', color: 'var(--text-primary)' }}>Aa Advanced Text Effects</strong>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
-          <div><label style={label}><span>Outline</span><strong>{value.textOutline.toFixed(1)}</strong></label><input style={input} type="range" min="0" max="12" step=".2" value={value.textOutline} onChange={e => update('textOutline', Number(e.target.value))} /></div>
-          <div><label style={label}><span>Layered shadow</span><strong>{value.textShadow.toFixed(1)}</strong></label><input style={input} type="range" min="0" max="12" step=".2" value={value.textShadow} onChange={e => update('textShadow', Number(e.target.value))} /></div>
+          <div><label style={label}><span>Outline</span><strong>{(value.textOutline ?? 4.8).toFixed(1)}</strong></label><input style={input} type="range" min="0" max="12" step=".2" value={value.textOutline ?? 4.8} onChange={e => update('textOutline', Number(e.target.value))} /></div>
+          <div><label style={label}><span>Layered shadow</span><strong>{(value.textShadow ?? 2).toFixed(1)}</strong></label><input style={input} type="range" min="0" max="12" step=".2" value={value.textShadow ?? 2} onChange={e => update('textShadow', Number(e.target.value))} /></div>
           <div><label style={label}><span>Glow</span><strong>{value.textGlow.toFixed(1)}</strong></label><input style={input} type="range" min="0" max="8" step=".2" value={value.textGlow} onChange={e => update('textGlow', Number(e.target.value))} /></div>
           <div><label style={label}><span>Scale</span><strong>{value.textScale}%</strong></label><input style={input} type="range" min="70" max="140" step="1" value={value.textScale} onChange={e => update('textScale', Number(e.target.value))} /></div>
           <div><label style={label}><span>Letter spacing</span><strong>{value.textLetterSpacing.toFixed(1)}</strong></label><input style={input} type="range" min="-2" max="12" step=".2" value={value.textLetterSpacing} onChange={e => update('textLetterSpacing', Number(e.target.value))} /></div>
