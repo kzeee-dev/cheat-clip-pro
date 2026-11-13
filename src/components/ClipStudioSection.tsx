@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { StudioTimeline } from './StudioTimeline';
 import { 
   AlertTriangle, 
   RefreshCw, 
@@ -5185,6 +5186,14 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
 
             {/* External Video Player Controls (Outside preview clip, YouTube-like) */}
             <div className="studio-player-controls-card">
+              <StudioTimeline
+                start={clipStart}
+                end={clipEnd}
+                currentTime={currentTime}
+                transcript={transcript}
+                onSeek={handleSeek}
+              />
+
               {/* Timeline scrollbar like YouTube */}
               <div className="player-timeline-row">
                 <input
