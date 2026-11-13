@@ -31,6 +31,8 @@ class RenderSettingsModel(BaseModel):
     subtitle_offset_seconds: Optional[float] = 0.0
     subtitle_position_mode: Optional[str] = "bottom"
     subtitle_center_y_percent: Optional[float] = 50.0
+    # Optional Hybrid Pro caption controls; absent values preserve the legacy renderer defaults.
+    pro_caption: Optional[Dict[str, Any]] = None
     # Background Music
     bgm_enabled: Optional[bool] = False
     bgm_file_path: Optional[str] = None
