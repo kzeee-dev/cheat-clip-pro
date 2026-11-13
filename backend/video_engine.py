@@ -2437,7 +2437,29 @@ def generate_ass_file(
     title_font_size_px: Optional[int] = None,
     title_text_case: Optional[str] = None,
     title_x_percent: Optional[float] = 50.0,
-    subtitle_offset_seconds: Optional[float] = 0.0
+    subtitle_offset_seconds: Optional[float] = 0.0,
+    ai_highlight_enabled: bool = False,
+    ai_highlight_words: Optional[List[str]] = None,
+    ai_highlight_color: str = "#FFE600",
+    ai_highlight_intensity: float = 72.0,
+    motion_preset: str = "none",
+    motion_speed: float = 1.0,
+    motion_duration_ms: int = 280,
+    motion_intensity: float = 72.0,
+    motion_delay_ms: int = 0,
+    motion_scope: str = "word",
+    motion_easing: str = "ease-out",
+    text_outline: float = 4.8,
+    text_shadow: float = 2.0,
+    text_glow: float = 0.0,
+    text_gradient: bool = False,
+    text_gradient_start: str = "#FFE600",
+    text_gradient_end: str = "#00E5FF",
+    text_background: bool = False,
+    text_background_opacity: float = 58.0,
+    text_letter_spacing: float = 0.0,
+    text_weight: str = "bold",
+    text_scale: float = 100.0
 ) -> str:
     """
     Generates an Advanced SubStation Alpha (.ass) subtitle and title file with karaoke / word-level animation.
@@ -2508,6 +2530,9 @@ def generate_ass_file(
             title_font_size = max(24, int(round(int(title_font_size_px) * 1.30 * (1080 / 1920))))
         else:
             title_font_size = max(24, int(round(int(title_font_size_px) * 1.30)))
+
+    text_scale = max(70.0, min(140.0, float(text_scale or 100.0)))
+    sub_font_size = max(12, int(round(sub_font_size * text_scale / 100.0)))
 
     # 3. Content boundaries for aspect ratios
     if is_landscape:
