@@ -541,8 +541,8 @@ export default function App() {
     const hasProCaptionRenderFeatures = Boolean(proCaption && (
       proCaption.aiHighlightEnabled ||
       proCaption.motionPreset !== 'none' ||
-      proCaption.textOutline !== 4.8 ||
-      proCaption.textShadow !== 2 ||
+      (proCaption.textOutline !== undefined && proCaption.textOutline !== 4.8) ||
+      (proCaption.textShadow !== undefined && proCaption.textShadow !== 2) ||
       proCaption.textGlow > 0 ||
       proCaption.textGradient ||
       proCaption.textBackground ||
@@ -847,8 +847,8 @@ export default function App() {
               motion_delay_ms: settings.proCaption.motionDelayMs,
               motion_scope: settings.proCaption.motionScope,
               motion_easing: settings.proCaption.motionEasing,
-              text_outline: settings.proCaption.textOutline,
-              text_shadow: settings.proCaption.textShadow,
+              text_outline: settings.proCaption.textOutline ?? null,
+              text_shadow: settings.proCaption.textShadow ?? null,
               text_glow: settings.proCaption.textGlow,
               text_gradient: settings.proCaption.textGradient,
               text_gradient_start: settings.proCaption.textGradientStart,
