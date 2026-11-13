@@ -62,3 +62,28 @@ These local changes are not part of commit c48eb09 unless later verified in Git 
 - Validation: three targeted behavior cases passed; `python -m py_compile backend/routers/analyze.py` passed; `git diff --check` passed.
 - No commit, APK build, live backend test, or Android device test performed.
 - Accepted baseline build #142 (`c48eb09`) remains untouched.
+
+
+## 2026-11-13 — Snapshot branch build and Studio editor foundation
+Branch: `snapshot/phone-project-2026-11-13`
+
+### CI enablement
+- Added the snapshot branch to the existing Android debug-build workflow push filter; existing branch triggers and build steps were preserved.
+- Snapshot commit `cac6ca6` triggered GitHub Actions run #168; backend syntax, frontend build, Capacitor sync, Gradle debug APK and artifact upload all passed.
+
+### Auto Clipper Studio UI
+- Added responsive workspace rules for phone portrait, compact landscape and tablet widths, including safe-area spacing, touch targets, and reduced-motion support.
+- Added `src/components/StudioTimeline.tsx`: a video-duration track, transcript caption blocks, live playhead and tap-to-seek caption markers.
+- Integrated the timeline into the existing Clip Studio player controls without replacing the current scrubber or render pipeline.
+- Preserved the existing preview player, caption generation, selected clips, rendering settings and backend contracts.
+
+### Verification
+- GitHub Actions run #169 passed for the responsive CSS change.
+- GitHub Actions run #172 passed for the integrated timeline and CSS. Frontend TypeScript/Vite build, Capacitor sync, Android Gradle `assembleDebug`, and APK artifact upload all completed successfully.
+- Debug APK artifact: 4,027,844 bytes; SHA-256 `0b90ca0880d491acebe4989e232ee7baaa277a8fee62451315e8db8fbad49b21`.
+- Runs #170 and #171 were cancelled by the workflow's existing per-branch concurrency rule when newer commits superseded them; the latest run #172 succeeded.
+
+### Pending
+- Physical Android device validation: portrait/landscape, timeline marker seeking, playback, caption preview, downloads and rendering regressions.
+- AI keyword highlighting, motion presets, advanced text effects and deeper editor layout remain planned; not yet implemented.
+- The accepted baseline branch `fix/media-source-resilience` and release signing configuration were not modified.
