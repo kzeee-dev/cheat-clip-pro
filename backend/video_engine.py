@@ -2685,7 +2685,84 @@ def generate_ass_file(
         outline_w = 3.6
         shadow_w = 1.8
 
-    # Title styling: clean transparent background across ALL formats (no black box border)
+    def _hex_rgb(value: str) -> Tuple[int, int, int]:
+        raw = str(value or "#FFFFFF").strip().lstrip("#")
+        if len(raw) == 3:
+            raw = "".join(ch * 2 for ch in raw)
+        if len(raw) != 6 or any(ch not in "0123456789abcdefABCDEF" for ch in raw):
+            raw = "FFFFFF"
+        return int(raw[0:2], 16), int(raw[2:4], 16), int(raw[4:6], 16)
+
+    def _ass_color(value: str, alpha: int = 0) -> str:
+        red, green, blue = _hex_rgb(value)
+        return f"&H{max(0, min(255, int(alpha))):02X}{blue:02X}{green:02X}{red:02X}"
+
+    def _blend_with_white(value: str, strength: float) -> str:
+        red, green, blue = _hex_rgb(value)
+        amount = max(0.0, min(1.0, float(strength) / 100.0))
+        return "#{:02X}{:02X}{:02X}".format(
+            round(255 + (red - 255) * amount),
+            round(255 + (green - 255) * amount),
+            round(255 + (blue - 255) * amount),
+        )
+
+    ai_highlight_ass = _ass_color(_blend_with_white(ai_highlight_color, ai_highlight_intensity))
+    ai_words = {
+        re.sub(r"^[^\w]+|[^\w]+$", "", str(word).lower())
+        for word in (ai_highlight_words or [])
+        if str(word).strip()
+    }
+    ai_words.discard("")
+
+    outline_w = max(0.0, min(12.0, float(text_outline)))
+    shadow_w = max(0.0, min(12.0, float(text_shadow)))
+    text_spacing = max(-2.0, min(12.0, float(text_letter_spacing)))
+    subtitle_bold = 0 if str(text_weight).lower() == "normal" else -1
+    subtitle_border_style = 3 if text_background else 1
+    if text_background:
+        opacity = max(10.0, min(100.0, float(text_background_opacity)))
+        back_color = _ass_color("#000000", round(255 * (1.0 - opacity / 100.0)))
+
+    motion_preset = str(motion_preset or "none").lower()
+    motion_speed = max(0.5, min(2.0, float(motion_speed or 1.0)))
+    motion_duration = max(70, min(1200, int(round(float(motion_duration_ms or 280) / motion_speed))))
+    motion_delay = max(0, min(500, int(motion_delay_ms or 0)))
+    motion_strength = max(0.0, min(1.0, float(motion_intensity or 0.0) / 100.0))
+    motion_accel = {"linear": 1.0, "ease-in": 0.65, "ease-out": 1.8, "ease-in-out": 1.25, "bounce": 0.55}.get(str(motion_easing), 1.8)
+
+    def _motion_override(active_index: int) -> str:
+        if motion_preset == "none" or motion_strength <= 0 or (motion_scope == "line" and active_index > 0):
+            return ""
+        d = motion_duration
+        start = motion_delay
+        finish = start + d
+        scale = 100 + round(24 * motion_strength)
+        small = 100 - round(24 * motion_strength)
+        if motion_preset == "cinematic":
+            tags = f"\\alpha&HFF&\\fscx{small}\\fscy{small}\\t({start},{finish},{motion_accel},\\alpha&H00&\\fscx100\\fscy100)"
+        elif motion_preset == "punch_impact":
+            tags = f"\\fscx{scale}\\fscy{scale}\\t({start},{finish},{motion_accel},\\fscx100\\fscy100)"
+        elif motion_preset == "smooth_pop":
+            tags = f"\\fscx{small}\\fscy{small}\\t({start},{finish},{motion_accel},\\fscx100\\fscy100)"
+        elif motion_preset == "kinetic_flow":
+            tags = f"\\frz{-round(7 * motion_strength)}\\t({start},{finish},{motion_accel},\\frz0)"
+        elif motion_preset == "bounce_pro":
+            middle = start + max(35, d // 2)
+            overshoot = 100 + round(28 * motion_strength)
+            tags = f"\\fscy{small}\\t({start},{middle},0.55,\\fscy{overshoot})\\t({middle},{finish},1.4,\\fscy100)"
+        elif motion_preset == "glitch_pro":
+            tags = f"\\blur{max(1, round(3 * motion_strength))}\\frz{-round(3 * motion_strength)}\\t({start},{finish},{motion_accel},\\blur0\\frz0)"
+        elif motion_preset == "type_reveal":
+            tags = f"\\alpha&HFF&\\t({start},{finish},{motion_accel},\\alpha&H00&)"
+        elif motion_preset == "slide_motion":
+            tags = f"\\fscx{small}\\alpha&HFF&\\t({start},{finish},{motion_accel},\\fscx100\\alpha&H00&)"
+        elif motion_preset == "focus_zoom":
+            tags = f"\\blur{max(1, round(5 * motion_strength))}\\fscx{scale}\\fscy{scale}\\t({start},{finish},{motion_accel},\\blur0\\fscx100\\fscy100)"
+        else:
+            return ""
+        return "{" + tags + "}"
+
+    # Title styling remains unchanged; advanced effects are scoped to subtitle captions.
     title_box_back = "&H00000000"
     title_border_style = 1
 
@@ -2700,7 +2777,7 @@ Collisions: Reverse
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: TitleStyle,{title_font_name or font_name},{title_font_size},&H00FFFFFF,&H000000FF,&H00000000,{title_box_back},-1,0,0,0,100,100,0,0,{title_border_style},4.4,2.0,8,40,40,0,1
-Style: SubStyle,{font_name},{sub_font_size},{primary_color},&H000000FF,{outline_color},{back_color},-1,0,0,0,100,100,0,0,1,{outline_w},{shadow_w},2,40,40,0,1
+Style: SubStyle,{font_name},{sub_font_size},{primary_color},&H000000FF,{outline_color},{back_color},{subtitle_bold},0,0,0,100,100,{text_spacing:.2f},0,{subtitle_border_style},{outline_w:.2f},{shadow_w:.2f},2,40,40,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
