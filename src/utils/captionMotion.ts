@@ -1,4 +1,19 @@
-import type { TranscriptLine, ViralClip } from '../types';
+import type { CaptionMotionSettings, TranscriptLine, ViralClip } from '../types';
+
+export const DEFAULT_CAPTION_MOTION_SETTINGS: CaptionMotionSettings = {
+  motionPreset: 'none',
+  motionIntensity: 55,
+  motionSpeed: 1,
+  outlineWidth: 4.8,
+  shadowDepth: 2,
+  glowStrength: 0,
+  backgroundBox: false,
+  backgroundOpacity: 72,
+  letterSpacing: 0,
+  highlightColor: 'preset',
+  autoHighlight: true,
+  manualHighlightTerms: [],
+};
 
 const STOP_WORDS = new Set([
   'yang','dan','atau','untuk','dari','dengan','pada','ini','itu','ada','jadi',
