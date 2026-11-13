@@ -2449,8 +2449,8 @@ def generate_ass_file(
     motion_delay_ms: int = 0,
     motion_scope: str = "word",
     motion_easing: str = "ease-out",
-    text_outline: float = 4.8,
-    text_shadow: float = 2.0,
+    text_outline: Optional[float] = None,
+    text_shadow: Optional[float] = None,
     text_glow: float = 0.0,
     text_gradient: bool = False,
     text_gradient_start: str = "#FFE600",
@@ -2714,8 +2714,10 @@ def generate_ass_file(
     }
     ai_words.discard("")
 
-    outline_w = max(0.0, min(12.0, float(text_outline)))
-    shadow_w = max(0.0, min(12.0, float(text_shadow)))
+    if text_outline is not None:
+        outline_w = max(0.0, min(12.0, float(text_outline)))
+    if text_shadow is not None:
+        shadow_w = max(0.0, min(12.0, float(text_shadow)))
     text_spacing = max(-2.0, min(12.0, float(text_letter_spacing)))
     subtitle_bold = 0 if str(text_weight).lower() == "normal" else -1
     subtitle_border_style = 3 if text_background else 1
