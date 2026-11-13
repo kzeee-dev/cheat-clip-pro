@@ -74,4 +74,5 @@ Branch: work/auto-clipper-studio
 - Passed bounded caption motion settings through the render API into ASS generation so selected effects are baked into server-rendered MP4 captions.
 - Existing caption appearance and static motion remain the defaults; new motion/effects are opt-in.
 - Android release signing and release artifacts were not changed.
-- Status: implementation committed for CI build and regression verification; device runtime validation remains pending.
+- CI verification: GitHub Actions run 43430103177 passed Python syntax, caption-motion helper tests, TypeScript/Vite frontend build, Capacitor sync, Gradle debug APK build, and artifact upload. Device runtime validation remains pending.
+- Test APK commit: 10e0f302fab5cca359a8b48bd4f209d9e7698266; artifact ID: 14039896103; APK SHA-256: 8651b90839d942dede7a105325114c1034949741206fd1fbfbfcb67b9181f568.

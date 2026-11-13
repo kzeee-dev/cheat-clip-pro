@@ -28,3 +28,10 @@ Do not silently fix these items. Inspect, reproduce, assess impact and record th
 - Verification: two-sentence, comma-separated phrase, and short-transcript cases behaved as expected; `py_compile` and `git diff --check` passed.
 - Status: RESOLVED IN LOCAL WORKTREE; no live backend/device test or APK build performed.
 - Backup retained: `backend/routers/analyze.py.before_distinct_fallback_titles_20261112_163408`.
+
+
+## 2026-11-13 — Dependency audit follow-up
+- GitHub Actions `npm ci` reports 19 vulnerabilities in the installed 266-package dependency tree: 11 moderate, 7 high, and 1 critical.
+- This is a dependency-tree summary only; affected package paths and exploitability have not yet been triaged.
+- No `npm audit fix` or forced dependency upgrades were applied during the Studio implementation to avoid introducing untested breaking changes.
+- Follow-up: inspect `npm audit --json`, identify direct/transitive paths, and update only with regression/build verification.

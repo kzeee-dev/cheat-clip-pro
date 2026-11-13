@@ -85,3 +85,54 @@ No application source files were modified while creating this documentation.
 - No live backend or Android device runtime test performed.
 - Accepted baseline build #142 (`c48eb09`) remains untouched.
 - Other existing local changes and pending audit items remain preserved.
+
+
+## 2026-11-13 — Auto Clipper Studio Caption Motion Lab
+
+### Branch and safety
+- Working branch: `work/auto-clipper-studio`.
+- Parent baseline: snapshot branch `snapshot/phone-project-2026-11-13`, commit `071c847`.
+- The snapshot, `master`, `fix/media-source-resilience`, release signing configuration, and release APK were not modified.
+- Debug build uses applicationId suffix `.debug` so it can be installed alongside the existing production app.
+
+### Implementation
+- Added Caption Motion Lab panel and persistent settings in the existing Studio.
+- Added keyword suggestions from AI key quotes and transcript context, manual keyword overrides, and highlight color selection. The original transcript is not rewritten.
+- Added Static, Cinematic, Punch Impact, Smooth Pop, Kinetic Flow, Bounce Pro, Glitch Pro, Type Reveal, Slide Motion, and Focus Zoom presets.
+- Added bounded ASS renderer support for motion tags, custom highlight words/color, stroke, shadow, glow, caption background box/opacity, and letter spacing.
+- Preserved existing caption preset stroke/shadow defaults unless the user explicitly enables custom overrides.
+- Added responsive phone portrait/landscape layout behavior; short landscape screens collapse Caption Motion Lab by default.
+- Added isolated Python tests for motion-tag generation.
+
+### Files changed
+- `.github/workflows/build-android.yml`
+- `android/app/build.gradle`
+- `backend/schemas/render.py`
+- `backend/services/render_service.py`
+- `backend/video_engine.py`
+- `scripts/test_caption_motion.py`
+- `src/App.tsx`
+- `src/components/CaptionMotionPanel.tsx`
+- `src/components/CaptionMotionPanel.css`
+- `src/components/ClipStudioSection.tsx`
+- `src/styles/studio-section.css`
+- `src/types.ts`
+- `src/utils/captionMotion.ts`
+- Project memory: CHANGELOG, FEATURE_INVENTORY, SESSION_LOG, KNOWN_ISSUES, REGRESSION_CHECKLIST.
+
+### Verification
+- Python backend syntax compilation: PASS.
+- Caption motion helper tests: PASS (9 motion presets plus static, zero-intensity, invalid-preset, and speed-clamp cases).
+- TypeScript/Vite frontend build: PASS.
+- Capacitor Android sync: PASS.
+- Gradle `assembleDebug`: PASS.
+- GitHub Actions run: 43430103177, commit `10e0f302fab5cca359a8b48bd4f209d9e7698266`.
+- APK artifact: `Cheat-Clip-Pro-Debug-APK`, artifact ID 14039896103, 4,030,805-byte ZIP; contained APK is 4,392,061 bytes.
+- APK SHA-256: `8651b90839d942dede7a105325114c1034949741206fd1fbfbfcb67b9181f568`.
+
+### Remaining validation
+- Install the debug-suffix APK beside the release app and verify launch/backend connection.
+- Render a short real clip with subtitles ON/OFF, all motion presets, smart/manual highlights, and text effects.
+- Confirm captions do not jump, clip, overlap safe zones, or drift from word timing.
+- Rotate portrait/landscape during editing and verify playhead, selection, and settings persist.
+- npm install reports 19 dependency vulnerabilities (11 moderate, 7 high, 1 critical); detailed triage remains open and no forced dependency upgrades were made.

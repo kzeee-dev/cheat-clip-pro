@@ -45,3 +45,15 @@ Run relevant checks before and after every change.
 - [ ] CI result and artifact recorded.
 
 Do not mark a checkbox complete without an actual test result.
+
+
+## Auto Clipper Studio Caption Motion Lab — device validation
+- [ ] Install the debug-suffix APK alongside the production app; confirm the release app remains installed and launches.
+- [ ] Launch the test app and confirm backend connectivity and existing project features.
+- [ ] Render a short clip with subtitles ON and OFF; verify subtitle toggle behavior remains unchanged.
+- [ ] Render with each motion preset; verify no flicker, clipping, overlap, or vertical position jumps.
+- [ ] Test smart keyword suggestions and manual overrides; confirm only visual emphasis changes and transcript text remains identical.
+- [ ] Test highlight colors, custom stroke/shadow overrides, glow, background box opacity, and letter spacing.
+- [ ] Verify existing caption style presets retain their default stroke/shadow when custom overrides are disabled.
+- [ ] Rotate portrait to landscape and back while editing; verify playhead, selected clip, and caption settings persist.
+- [ ] Test on a small phone viewport and landscape viewport; verify controls remain reachable above system bars and keyboard.
