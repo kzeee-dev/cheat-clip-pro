@@ -16,6 +16,7 @@ class RenderSettingsModel(BaseModel):
     title_duration: Optional[str] = "entire"
     subtitles_enabled: Optional[bool] = True
     caption_style: str = "viral_pop"
+    caption_motion: Optional[Dict[str, Any]] = None
     caption_font: str = "Outfit"
     title_font: Optional[str] = "Outfit"
     font_size: str = "medium"
