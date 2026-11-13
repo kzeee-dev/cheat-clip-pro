@@ -10,7 +10,7 @@ export function triggerBrowserDownload(blob: Blob, filename: string) {
   if (Capacitor.isNativePlatform()) {
     void (async () => {
       const safeFilename = filename || 'cheat_clip_download';
-      const extension = safeFilename.match(/\\.[a-z0-9]{2,5}$/i)?.[0] || '.mp4';
+      const extension = safeFilename.match(/\.[a-z0-9]{2,5}$/i)?.[0] || '.mp4';
       const title = safeFilename.slice(0, -extension.length) || 'download';
       const formData = new FormData();
       formData.append('file', blob, safeFilename);
