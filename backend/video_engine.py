@@ -2897,7 +2897,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     w_txt = item["word_text"]
                     raw_word = re.sub(r"^[^\w]+|[^\w]+$", "", str(item["raw"].get("word", "")).lower())
                     is_ai_keyword = bool(ai_highlight_enabled and raw_word in ai_words)
-                    if is_ai_keyword:
+                    if is_ai_keyword or (text_gradient and idx == active_idx):
                         if text_gradient and len(chunk) > 1:
                             ratio = idx / max(1, len(chunk) - 1)
                             sr, sg, sb = _hex_rgb(text_gradient_start)
