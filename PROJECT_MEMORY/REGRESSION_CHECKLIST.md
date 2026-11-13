@@ -45,3 +45,12 @@ Run relevant checks before and after every change.
 - [ ] CI result and artifact recorded.
 
 Do not mark a checkbox complete without an actual test result.
+
+## Clip Studio editor
+- [ ] Studio opens and retains existing settings on Android.
+- [ ] Mobile portrait layout keeps preview, controls and render action usable.
+- [ ] Compact landscape layout keeps preview and controls visible without horizontal overflow.
+- [ ] Timeline video track and playhead follow playback and scrubbing.
+- [ ] Tapping transcript caption markers seeks to the corresponding timestamp.
+- [ ] Empty transcript state displays safely without breaking preview.
+- [ ] Orientation change preserves selected clip, playback position and editor settings.
