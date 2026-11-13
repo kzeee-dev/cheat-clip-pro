@@ -5118,7 +5118,8 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                                   transform: isActive ? `scale(${Math.max(1.08, proCaption.textScale / 100)})` : 'scale(1)',
                                   display: 'inline-block',
                                   transition: 'transform 0.08s ease, color 0.08s ease',
-                                  animation: isActive && proCaption.motionPreset !== 'none' ? `ccp-motion-${proCaption.motionPreset} ${Math.max(0.12, 0.32 / proCaption.motionSpeed)}s ease-out both` : undefined,
+                                  animation: isActive && proCaption.motionPreset !== 'none' && (proCaption.motionScope !== 'line' || idx === 0) ? `ccp-motion-${proCaption.motionPreset} ${Math.max(0.1, proCaption.motionDurationMs / 1000 / proCaption.motionSpeed)}s ease-out both` : undefined,
+                                  animationDelay: isActive ? `${proCaption.motionDelayMs}ms` : undefined,
                                   textShadow: isActive || isKeyword
                                     ? `0 0 ${Math.max(3, proCaption.textGlow * 2)}px ${color}99, 0 1px ${Math.max(4, proCaption.textShadow * 2)}px rgba(0,0,0,0.95)`
                                     : '0 0 2px #000, 0 1px 3px rgba(0,0,0,0.95), 0 0 5px rgba(0,0,0,0.8)',
