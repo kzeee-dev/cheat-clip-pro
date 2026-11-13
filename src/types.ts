@@ -113,8 +113,10 @@ export interface ProCaptionSettings {
   aiHighlightWords?: string[];
   motionPreset: CaptionMotionPreset;
   motionSpeed: number;
+  motionDurationMs: number;
   motionIntensity: number;
   motionDelayMs: number;
+  motionScope: 'word' | 'line';
   motionEasing: 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out' | 'bounce';
   textOutline: number;
   textShadow: number;
