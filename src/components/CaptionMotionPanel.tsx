@@ -37,6 +37,7 @@ export const CaptionMotionPanel: React.FC<Props> = ({ value, onChange, clips, tr
   const [expanded, setExpanded] = useState(true);
   const [draftTerm, setDraftTerm] = useState('');
   const suggestions = useMemo(() => suggestCaptionHighlights(clips, transcript), [clips, transcript]);
+  const previewHighlightColor = COLORS.find(color => color.value === value.highlightColor)?.value || '#FFE600';
   const update = (patch: Partial<CaptionMotionSettings>) => onChange({ ...value, ...patch });
   const addTerm = (term: string) => {
     const clean = term.trim().replace(/[,;]+$/g, '');
@@ -92,6 +93,7 @@ export const CaptionMotionPanel: React.FC<Props> = ({ value, onChange, clips, tr
             <label className="cmp-color-field">
               <span>Warna highlight kata</span>
               <select value={value.highlightColor} onChange={e => update({ highlightColor: e.target.value })}>
+                <option value="preset">Ikuti preset caption</option>
                 {COLORS.map(color => <option value={color.value} key={color.value}>{color.label}</option>)}
               </select>
             </label>
@@ -130,12 +132,12 @@ export const CaptionMotionPanel: React.FC<Props> = ({ value, onChange, clips, tr
               <span style={{
                 color: '#fff',
                 WebkitTextStroke: (value.outlineWidth > 0 ? Math.min(value.outlineWidth, 3) : 0) + 'px #101018',
-                textShadow: value.glowStrength > 0 ? '0 0 ' + (value.glowStrength * 4) + 'px ' + value.highlightColor : '0 ' + (value.shadowDepth / 2) + 'px ' + value.shadowDepth + 'px #000',
+                textShadow: value.glowStrength > 0 ? '0 0 ' + (value.glowStrength * 4) + 'px ' + previewHighlightColor : '0 ' + (value.shadowDepth / 2) + 'px ' + value.shadowDepth + 'px #000',
                 letterSpacing: value.letterSpacing + 'px',
                 background: value.backgroundBox ? 'rgba(0,0,0,' + (value.backgroundOpacity / 100) + ')' : 'transparent',
                 padding: value.backgroundBox ? '8px 12px' : 0,
                 borderRadius: 6,
-              }}>INI MOMEN <b style={{ color: value.highlightColor }}>PALING PENTING</b></span>
+              }}>INI MOMEN <b style={{ color: previewHighlightColor }}>PALING PENTING</b></span>
             </div>
             <small>Preview kontrol. Hasil akhir diproses saat render FFmpeg.</small>
           </div>
