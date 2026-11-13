@@ -2720,6 +2720,15 @@ def generate_ass_file(
     sub_border_style = 3 if background_box else 1
     motion_tags = build_caption_motion_tags(motion_config)
     glow_tag = f"\\blur{glow_strength:.1f}" if glow_strength > 0 else ""
+    motion_preset_name = str(motion_config.get("motion_preset", "none")).lower()
+    motion_intensity = _safe_caption_float(motion_config.get("motion_intensity", 55), 55, 0, 100) / 100.0
+    motion_speed = _safe_caption_float(motion_config.get("motion_speed", 1.0), 1.0, 0.5, 2.0)
+    if motion_preset_name == "slide_motion":
+        slide_offset = int(72 * motion_intensity)
+        slide_duration = max(80, int(220 / motion_speed))
+        motion_position_tag = f"\\move({center_x + slide_offset},{sub_y},{center_x},{sub_y},0,{slide_duration})"
+    else:
+        motion_position_tag = f"\\pos({center_x},{sub_y})"
 
     raw_highlight_color = str(motion_config.get("highlight_color", "")).lstrip("#")
     if len(raw_highlight_color) == 6 and all(ch in "0123456789abcdefABCDEF" for ch in raw_highlight_color):
@@ -2880,7 +2889,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 styled_line = " ".join(line_parts)
                 # Lock position to sub_y with \q2\an{sub_align}\pos(center_x, sub_y)
                 events.append(
-                    f"Dialogue: 0,{format_ass_timestamp(w_start)},{format_ass_timestamp(w_end)},SubStyle,,0,0,0,,{{\\q2\\an{sub_align}\\pos({center_x},{sub_y}){motion_tags}{glow_tag}}}{styled_line}"
+                    f"Dialogue: 0,{format_ass_timestamp(w_start)},{format_ass_timestamp(w_end)},SubStyle,,0,0,0,,{{\\q2\\an{sub_align}{motion_position_tag}{motion_tags}{glow_tag}}}{styled_line}"
                 )
 
     ass_content = ass_header + "\n".join(events) + "\n"
