@@ -116,9 +116,11 @@ export const CaptionMotionPanel: React.FC<Props> = ({ value, onChange, clips, tr
 
           <div className="cmp-section">
             <div className="cmp-section-title"><strong>Advanced Text Effects</strong><span>Render controls</span></div>
+            <label className="cmp-box-toggle"><input type="checkbox" checked={value.useCustomOutline} onChange={e => update({ useCustomOutline: e.target.checked })} /><span>Override preset stroke</span></label>
+            <label className="cmp-box-toggle"><input type="checkbox" checked={value.useCustomShadow} onChange={e => update({ useCustomShadow: e.target.checked })} /><span>Override preset shadow</span></label>
             <div className="cmp-range-grid">
-              <label className="cmp-range"><span>Stroke / Outline <b>{value.outlineWidth.toFixed(1)}</b></span><input type="range" min="0" max="9" step="0.5" value={value.outlineWidth} onChange={e => update({ outlineWidth: Number(e.target.value) })} /></label>
-              <label className="cmp-range"><span>Shadow depth <b>{value.shadowDepth.toFixed(1)}</b></span><input type="range" min="0" max="8" step="0.5" value={value.shadowDepth} onChange={e => update({ shadowDepth: Number(e.target.value) })} /></label>
+              <label className="cmp-range"><span>Stroke / Outline <b>{value.outlineWidth.toFixed(1)}</b></span><input type="range" min="0" max="9" step="0.5" value={value.outlineWidth} disabled={!value.useCustomOutline} onChange={e => update({ outlineWidth: Number(e.target.value), useCustomOutline: true })} /></label>
+              <label className="cmp-range"><span>Shadow depth <b>{value.shadowDepth.toFixed(1)}</b></span><input type="range" min="0" max="8" step="0.5" value={value.shadowDepth} disabled={!value.useCustomShadow} onChange={e => update({ shadowDepth: Number(e.target.value), useCustomShadow: true })} /></label>
               <label className="cmp-range"><span>Neon glow <b>{value.glowStrength.toFixed(1)}</b></span><input type="range" min="0" max="5" step="0.5" value={value.glowStrength} onChange={e => update({ glowStrength: Number(e.target.value) })} /></label>
               <label className="cmp-range"><span>Letter spacing <b>{value.letterSpacing.toFixed(1)}</b></span><input type="range" min="-1" max="5" step="0.5" value={value.letterSpacing} onChange={e => update({ letterSpacing: Number(e.target.value) })} /></label>
               <label className="cmp-range"><span>Box opacity <b>{value.backgroundOpacity}%</b></span><input type="range" min="10" max="100" step="5" value={value.backgroundOpacity} onChange={e => update({ backgroundOpacity: Number(e.target.value) })} /></label>
