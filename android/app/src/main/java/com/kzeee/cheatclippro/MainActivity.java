@@ -3,6 +3,7 @@ package com.kzeee.cheatclippro;
 import android.app.DownloadManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.ActivityNotFoundException;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -75,22 +76,55 @@ public class MainActivity extends BridgeActivity {
         String contentDisposition,
         String mimeType
     ) {
-        if (Build.VERSION.SDK_INT >= 33
-            && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED) {
-            pendingDownloadUrl = url;
-            pendingUserAgent = userAgent;
-            pendingContentDisposition = contentDisposition;
-            pendingMimeType = mimeType;
+        try {
+            Uri uri = Uri.parse(url);
+            String scheme = uri.getScheme();
+            if (!"http".equalsIgnoreCase(scheme)
+                && !"https".equalsIgnoreCase(scheme)) {
+                throw new IllegalArgumentException("URL download bukan HTTP/HTTPS");
+            }
 
-            requestPermissions(
-                new String[]{Manifest.permission.POST_NOTIFICATIONS},
-                REQUEST_POST_NOTIFICATIONS
-            );
-            return;
+            // Open the actual attachment in the Chrome app. The backend responds
+            // with Content-Disposition: attachment and the final filename, so
+            // Chrome starts its own download flow instead of a WebView blob URL.
+            Intent chromeIntent = new Intent(Intent.ACTION_VIEW, uri);
+            chromeIntent.addCategory(Intent.CATEGORY_BROWSABLE);
+            chromeIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            chromeIntent.setPackage("com.android.chrome");
+            try {
+                startActivity(chromeIntent);
+                Toast.makeText(
+                    this,
+                    "Membuka Chrome untuk mengunduh file...",
+                    Toast.LENGTH_SHORT
+                ).show();
+                Log.i(TAG, "Opening attachment in Chrome: " + uri);
+                return;
+            } catch (ActivityNotFoundException chromeMissing) {
+                Log.w(TAG, "Chrome is unavailable; trying the default browser", chromeMissing);
+            }
+
+            Intent browserIntent = new Intent(Intent.ACTION_VIEW, uri);
+            browserIntent.addCategory(Intent.CATEGORY_BROWSABLE);
+            browserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            try {
+                startActivity(browserIntent);
+                return;
+            } catch (ActivityNotFoundException noBrowser) {
+                Log.w(TAG, "No browser can handle download URL; falling back to DownloadManager", noBrowser);
+            }
+
+            // Last-resort fallback keeps downloads available on devices without
+            // an installed browser. This path does not require notification permission.
+            enqueueNativeDownload(url, userAgent, contentDisposition, mimeType);
+        } catch (Exception error) {
+            Log.e(TAG, "Could not open download in Chrome", error);
+            Toast.makeText(
+                this,
+                "Gagal membuka Chrome: " + error.getMessage(),
+                Toast.LENGTH_LONG
+            ).show();
         }
-
-        enqueueNativeDownload(url, userAgent, contentDisposition, mimeType);
     }
 
     @Override
