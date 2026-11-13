@@ -553,7 +553,11 @@ export default function App() {
     // ASS subtitle effects are rendered by the backend. Keep the existing browser
     // renderer for ordinary jobs, but route advanced caption jobs through the
     // backend so the selected effects are actually burned into the MP4.
-    const isClientMode = !hasProCaptionRenderFeatures && settings.renderMode !== 'merged' && (settings.hardwareAccel === 'browser_wasm' || (!isMobileDevice() && (settings.hardwareAccel === 'client_gpu' || settings.renderEngine === 'client' || (sourceMode === 'upload' && Boolean(uploadedVideoFile)))));
+    // The browser renderer currently does not implement the Studio subtitle pipeline.
+    // Any enabled subtitle preset (including legacy styles and Hybrid Pro controls)
+    // must be burned in by the backend ASS renderer to match the editing preview.
+    const needsServerSubtitleRenderer = settings.subtitlesEnabled !== false && settings.captionStyle !== 'none';
+    const isClientMode = !needsServerSubtitleRenderer && !hasProCaptionRenderFeatures && settings.renderMode !== 'merged' && (settings.hardwareAccel === 'browser_wasm' || (!isMobileDevice() && (settings.hardwareAccel === 'client_gpu' || settings.renderEngine === 'client' || (sourceMode === 'upload' && Boolean(uploadedVideoFile)))));
 
     if (isClientMode) {
       try {
@@ -818,8 +822,10 @@ export default function App() {
             file_name_suffix: settings.fileNameSuffix || '',
             title_position: settings.titlePosition,
             title_duration: settings.titleDuration || 'entire',
-            subtitles_enabled: result.subtitle_enabled !== false && settings.captionStyle !== 'none',
-            caption_style: result.subtitle_enabled === false ? 'none' : settings.captionStyle,
+            // Clip Studio's current selection is authoritative; analysis-time subtitle flags
+            // must not silently override a style the user explicitly enabled in the editor.
+            subtitles_enabled: settings.subtitlesEnabled !== false && settings.captionStyle !== 'none',
+            caption_style: settings.subtitlesEnabled === false ? 'none' : settings.captionStyle,
             caption_font: settings.captionFont,
             title_font: settings.titleFont || settings.captionFont || 'Outfit',
             font_size: settings.fontSize,
