@@ -1,4 +1,5 @@
 import React from 'react';
+import { Capacitor } from '@capacitor/core';
 import { RefreshCw, AlertTriangle } from 'lucide-react';
 import { useLanguage } from '../locales';
 import type { BatchRenderProgress } from '../types';
@@ -14,6 +15,21 @@ interface BatchRenderProgressModalProps {
 }
 
 async function downloadRenderedArtifact(url: string, filename: string) {
+  // On Android, open the real attachment URL directly. MainActivity's WebView
+  // DownloadListener hands it to Chrome, which reads Content-Disposition and
+  // starts the MP4/ZIP download without staging and re-uploading the same file.
+  if (Capacitor.isNativePlatform()) {
+    const link = document.createElement('a');
+    link.href = apiUrl(url);
+    link.download = filename;
+    link.rel = 'noopener';
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    return;
+  }
+
   const response = await fetch(apiUrl(url));
   if (!response.ok) {
     throw new Error(`Download gagal (HTTP ${response.status})`);
