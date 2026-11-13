@@ -390,3 +390,77 @@
   margin-bottom: 0;
   line-height: 1.35;
 }
+
+
+/* Hybrid Pro caption controls and live motion previews */
+.ccp-pro-caption-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  min-width: 0;
+}
+.ccp-pro-caption-controls input,
+.ccp-pro-caption-controls select,
+.ccp-pro-caption-controls textarea,
+.ccp-pro-caption-controls button {
+  font: inherit;
+}
+.ccp-pro-caption-controls input[type="range"] {
+  cursor: pointer;
+}
+.ccp-pro-caption-controls input[type="color"] {
+  width: 38px;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid rgba(148, 163, 184, .3);
+  border-radius: 6px;
+  background: rgba(2, 6, 23, .7);
+}
+@media (min-width: 900px) {
+  .ccp-pro-caption-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+  .ccp-pro-caption-controls > div:first-child {
+    grid-column: 1 / -1;
+  }
+}
+@keyframes ccp-motion-cinematic {
+  from { opacity: 0; transform: scale(.94); filter: blur(2px); }
+  to { opacity: 1; transform: scale(1); filter: blur(0); }
+}
+@keyframes ccp-motion-punch_impact {
+  0% { transform: scale(1.22); }
+  65% { transform: scale(.96); }
+  100% { transform: scale(1.08); }
+}
+@keyframes ccp-motion-smooth_pop {
+  from { opacity: .35; transform: scale(.82); }
+  to { opacity: 1; transform: scale(1.08); }
+}
+@keyframes ccp-motion-kinetic_flow {
+  from { transform: rotate(-4deg) translateY(3px); }
+  to { transform: rotate(0) translateY(0); }
+}
+@keyframes ccp-motion-bounce_pro {
+  0% { transform: scale(.78, .72); }
+  70% { transform: scale(1.12, 1.16); }
+  100% { transform: scale(1.08, 1.08); }
+}
+@keyframes ccp-motion-glitch_pro {
+  0%, 35% { transform: translateX(-2px) skewX(-3deg); filter: hue-rotate(25deg); }
+  55% { transform: translateX(2px) skewX(3deg); }
+  100% { transform: translateX(0) skewX(0); filter: none; }
+}
+@keyframes ccp-motion-type_reveal {
+  from { opacity: 0; clip-path: inset(0 100% 0 0); }
+  to { opacity: 1; clip-path: inset(0 0 0 0); }
+}
+@keyframes ccp-motion-slide_motion {
+  from { opacity: 0; transform: translateX(18px) scale(.94); }
+  to { opacity: 1; transform: translateX(0) scale(1.08); }
+}
+@keyframes ccp-motion-focus_zoom {
+  from { opacity: .4; filter: blur(5px); transform: scale(1.2); }
+  to { opacity: 1; filter: blur(0); transform: scale(1.08); }
+}
