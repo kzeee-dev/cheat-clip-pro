@@ -3,6 +3,7 @@ import { RefreshCw, AlertTriangle } from 'lucide-react';
 import { useLanguage } from '../locales';
 import type { BatchRenderProgress } from '../types';
 import { apiUrl } from '../utils/api';
+import { triggerBrowserDownload } from '../utils/download';
 import styles from './BatchRenderProgressModal.module.css';
 
 interface BatchRenderProgressModalProps {
@@ -10,6 +11,16 @@ interface BatchRenderProgressModalProps {
   onClose: () => void;
   progress: BatchRenderProgress | null;
   onRetryClip?: (clipIndex?: number) => void;
+}
+
+async function downloadRenderedArtifact(url: string, filename: string) {
+  const response = await fetch(apiUrl(url));
+  if (!response.ok) {
+    throw new Error(`Download gagal (HTTP ${response.status})`);
+  }
+  const blob = await response.blob();
+  if (!blob.size) throw new Error('File hasil render kosong.');
+  triggerBrowserDownload(blob, filename);
 }
 
 export const BatchRenderProgressModal: React.FC<BatchRenderProgressModalProps> = ({
@@ -97,6 +108,13 @@ export const BatchRenderProgressModal: React.FC<BatchRenderProgressModalProps> =
                     {clip.download_url && (
                       <a
                         href={apiUrl(clip.download_url)}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          void downloadRenderedArtifact(clip.download_url!, `${clip.title || `clip-${idx + 1}`}.mp4`).catch((error) => {
+                            console.error('Rendered MP4 download failed:', error);
+                            window.alert(error instanceof Error ? error.message : 'Gagal mengunduh MP4.');
+                          });
+                        }}
                         className={styles.btnDownloadClip}
                         title={t.batchProgress.downloadMp4Tooltip}
                       >
@@ -162,8 +180,14 @@ export const BatchRenderProgressModal: React.FC<BatchRenderProgressModalProps> =
               )}
               {progress.zip_url && (
                 <a
-                  href={progress.zip_url}
-                  download
+                  href={apiUrl(progress.zip_url)}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    void downloadRenderedArtifact(progress.zip_url!, 'Cheat_Clip_Pro_Paket.zip').catch((error) => {
+                      console.error('Rendered ZIP download failed:', error);
+                      window.alert(error instanceof Error ? error.message : 'Gagal mengunduh ZIP.');
+                    });
+                  }}
                   className={styles.zipDownloadBtn}
                 >
                   {t.batchProgress.downloadZip}
