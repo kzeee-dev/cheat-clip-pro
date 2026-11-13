@@ -102,6 +102,33 @@ export interface HardwareAccelInfo {
   }>;
 }
 
+export type CaptionMotionPreset = 'none' | 'cinematic' | 'punch_impact' | 'smooth_pop' | 'kinetic_flow' | 'bounce_pro' | 'glitch_pro' | 'type_reveal' | 'slide_motion' | 'focus_zoom';
+
+export interface ProCaptionSettings {
+  aiHighlightEnabled: boolean;
+  aiHighlightIntensity: number;
+  aiHighlightColor: string;
+  aiHighlightManualWords: string;
+  aiHighlightExcludedWords: string;
+  aiHighlightWords?: string[];
+  motionPreset: CaptionMotionPreset;
+  motionSpeed: number;
+  motionIntensity: number;
+  motionDelayMs: number;
+  motionEasing: 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out' | 'bounce';
+  textOutline: number;
+  textShadow: number;
+  textGlow: number;
+  textGradient: boolean;
+  textGradientStart: string;
+  textGradientEnd: string;
+  textBackground: boolean;
+  textBackgroundOpacity: number;
+  textLetterSpacing: number;
+  textWeight: 'normal' | 'bold' | 'black';
+  textScale: number;
+}
+
 export interface RenderSettings {
   renderEngine?: 'server' | 'client';
   aspectRatio: AspectRatioOption;
@@ -133,6 +160,7 @@ export interface RenderSettings {
   subtitleOffsetSeconds?: number;
   subtitlePositionMode?: SubtitlePositionMode;
   subtitleCenterYPercent?: number;
+  proCaption?: ProCaptionSettings;
   selectedClips: ViralClip[];
   // Background Music
   bgmEnabled?: boolean;
