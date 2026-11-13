@@ -537,7 +537,23 @@ export default function App() {
     setIsLaunchingRender(true);
 
     // Merged compilation must run through the backend concat pipeline. The browser renderer processes clips individually and does not implement merged output.
-    const isClientMode = settings.renderMode !== 'merged' && (settings.hardwareAccel === 'browser_wasm' || (!isMobileDevice() && (settings.hardwareAccel === 'client_gpu' || settings.renderEngine === 'client' || (sourceMode === 'upload' && Boolean(uploadedVideoFile)))));
+    const proCaption = settings.proCaption;
+    const hasProCaptionRenderFeatures = Boolean(proCaption && (
+      proCaption.aiHighlightEnabled ||
+      proCaption.motionPreset !== 'none' ||
+      proCaption.textOutline !== 4.8 ||
+      proCaption.textShadow !== 2 ||
+      proCaption.textGlow > 0 ||
+      proCaption.textGradient ||
+      proCaption.textBackground ||
+      proCaption.textLetterSpacing !== 0 ||
+      proCaption.textWeight !== 'bold' ||
+      proCaption.textScale !== 100
+    ));
+    // ASS subtitle effects are rendered by the backend. Keep the existing browser
+    // renderer for ordinary jobs, but route advanced caption jobs through the
+    // backend so the selected effects are actually burned into the MP4.
+    const isClientMode = !hasProCaptionRenderFeatures && settings.renderMode !== 'merged' && (settings.hardwareAccel === 'browser_wasm' || (!isMobileDevice() && (settings.hardwareAccel === 'client_gpu' || settings.renderEngine === 'client' || (sourceMode === 'upload' && Boolean(uploadedVideoFile)))));
 
     if (isClientMode) {
       try {
@@ -819,6 +835,28 @@ export default function App() {
             subtitle_offset_seconds: settings.subtitleOffsetSeconds !== undefined ? settings.subtitleOffsetSeconds : 0.0,
             subtitle_position_mode: settings.subtitlePositionMode || 'bottom',
             subtitle_center_y_percent: settings.subtitleCenterYPercent !== undefined ? settings.subtitleCenterYPercent : 50.0,
+            pro_caption: settings.proCaption ? {
+              ai_highlight_enabled: settings.proCaption.aiHighlightEnabled,
+              ai_highlight_words: settings.proCaption.aiHighlightWords || [],
+              ai_highlight_color: settings.proCaption.aiHighlightColor,
+              ai_highlight_intensity: settings.proCaption.aiHighlightIntensity,
+              motion_preset: settings.proCaption.motionPreset,
+              motion_speed: settings.proCaption.motionSpeed,
+              motion_intensity: settings.proCaption.motionIntensity,
+              motion_delay_ms: settings.proCaption.motionDelayMs,
+              motion_easing: settings.proCaption.motionEasing,
+              text_outline: settings.proCaption.textOutline,
+              text_shadow: settings.proCaption.textShadow,
+              text_glow: settings.proCaption.textGlow,
+              text_gradient: settings.proCaption.textGradient,
+              text_gradient_start: settings.proCaption.textGradientStart,
+              text_gradient_end: settings.proCaption.textGradientEnd,
+              text_background: settings.proCaption.textBackground,
+              text_background_opacity: settings.proCaption.textBackgroundOpacity,
+              text_letter_spacing: settings.proCaption.textLetterSpacing,
+              text_weight: settings.proCaption.textWeight,
+              text_scale: settings.proCaption.textScale,
+            } : null,
             // Background Music
             bgm_enabled: settings.bgmEnabled || false,
             bgm_file_path: settings.bgmFilePath || null,
