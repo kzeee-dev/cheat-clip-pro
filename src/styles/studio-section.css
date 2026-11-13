@@ -2064,3 +2064,133 @@
     animation-duration: 0.01ms !important;
   }
 }
+
+
+/* Interactive video + subtitle timeline */
+.studio-timeline {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.7rem 0.75rem;
+  margin-top: 0.55rem;
+  background: linear-gradient(180deg, rgba(17, 20, 31, 0.96), rgba(9, 11, 18, 0.96));
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 10px;
+}
+
+.studio-timeline-heading,
+.studio-timeline-scale {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: #94a3b8;
+  font: 600 0.64rem/1.2 var(--font-mono, monospace);
+  letter-spacing: 0.06em;
+}
+
+.studio-timeline-heading {
+  margin-bottom: 0.6rem;
+  color: #cbd5e1;
+}
+
+.studio-timeline-track-row {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0.45rem 0;
+}
+
+.studio-timeline-track-label {
+  color: #94a3b8;
+  font: 700 0.6rem/1 var(--font-mono, monospace);
+  letter-spacing: 0.05em;
+}
+
+.studio-timeline-track {
+  position: relative;
+  height: 24px;
+  min-width: 0;
+  overflow: hidden;
+  background: #090b12;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 5px;
+}
+
+.studio-timeline-video-segment {
+  position: absolute;
+  inset: 4px 0;
+  background: linear-gradient(90deg, rgba(34, 211, 238, 0.35), rgba(59, 130, 246, 0.58));
+  border: 1px solid rgba(56, 189, 248, 0.55);
+  border-radius: 3px;
+}
+
+.studio-timeline-caption-block {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  min-width: 2px;
+  padding: 0;
+  border: 1px solid rgba(192, 132, 252, 0.9);
+  border-radius: 3px;
+  background: linear-gradient(180deg, #a855f7, #7c3aed);
+  cursor: pointer;
+  z-index: 1;
+  transition: filter 0.15s ease, transform 0.15s ease;
+}
+
+.studio-timeline-caption-block:hover,
+.studio-timeline-caption-block:focus-visible {
+  filter: brightness(1.35);
+  transform: scaleY(1.18);
+  outline: 1px solid #e9d5ff;
+  outline-offset: 1px;
+  z-index: 3;
+}
+
+.studio-timeline-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #f8fafc;
+  box-shadow: 0 0 7px rgba(255, 255, 255, 0.85);
+  transform: translateX(-1px);
+  pointer-events: none;
+  z-index: 4;
+}
+
+.studio-timeline-empty {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  padding-left: 0.5rem;
+  color: #64748b;
+  font-size: 0.62rem;
+}
+
+.studio-timeline-scale {
+  margin: 0.4rem 0 0 58px;
+  font-size: 0.58rem;
+  letter-spacing: 0;
+}
+
+@media (max-width: 600px) {
+  .studio-timeline {
+    padding: 0.6rem;
+    border-radius: 8px;
+  }
+
+  .studio-timeline-track-row {
+    grid-template-columns: 48px minmax(0, 1fr);
+    gap: 0.4rem;
+  }
+
+  .studio-timeline-scale {
+    margin-left: 48px;
+  }
+
+  .studio-timeline-track {
+    height: 22px;
+  }
+}
