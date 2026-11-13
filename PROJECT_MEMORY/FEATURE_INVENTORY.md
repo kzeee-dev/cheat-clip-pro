@@ -30,3 +30,6 @@ Status legend:
 ## Important regression rule
 A feature is not considered verified merely because it appears in this inventory.
 Record the exact test and result in SESSION_LOG.md or REGRESSION_CHECKLIST.md.
+
+- Interactive Clip Studio timeline (video track, transcript caption markers, playhead, tap-to-seek) — IMPLEMENTED; CI APK build verified; device validation pending
+- Responsive Clip Studio workspace (mobile portrait, compact landscape, tablet, safe areas) — IMPLEMENTED; CI APK build verified; device validation pending
