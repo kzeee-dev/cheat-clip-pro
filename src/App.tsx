@@ -11,6 +11,7 @@ import { getStoredCookies, hasStoredCookies } from './utils/cookieUtils';
 import { extractAudioFromVideoClient } from './utils/audioExtractor';
 
 import { triggerBrowserDownload } from './utils/download';
+import { getCaptionHighlightTerms } from './utils/captionMotion';
 
 import { isMobileDevice, requestWakeLock, releaseWakeLock } from './utils/deviceUtils';
 import { LayoutMetricsSync } from './utils/layoutMetricsSync';
@@ -804,6 +805,24 @@ export default function App() {
             title_duration: settings.titleDuration || 'entire',
             subtitles_enabled: result.subtitle_enabled !== false && settings.captionStyle !== 'none',
             caption_style: result.subtitle_enabled === false ? 'none' : settings.captionStyle,
+            caption_motion: settings.captionMotion ? {
+              motion_preset: settings.captionMotion.motionPreset,
+              motion_intensity: settings.captionMotion.motionIntensity,
+              motion_speed: settings.captionMotion.motionSpeed,
+              outline_width: settings.captionMotion.outlineWidth,
+              shadow_depth: settings.captionMotion.shadowDepth,
+              glow_strength: settings.captionMotion.glowStrength,
+              background_box: settings.captionMotion.backgroundBox,
+              background_opacity: settings.captionMotion.backgroundOpacity,
+              letter_spacing: settings.captionMotion.letterSpacing,
+              highlight_color: settings.captionMotion.highlightColor,
+              highlight_terms: getCaptionHighlightTerms(
+                settings.selectedClips,
+                result.transcript || [],
+                settings.captionMotion.autoHighlight,
+                settings.captionMotion.manualHighlightTerms
+              ),
+            } : null,
             caption_font: settings.captionFont,
             title_font: settings.titleFont || settings.captionFont || 'Outfit',
             font_size: settings.fontSize,
