@@ -118,8 +118,8 @@ export interface ProCaptionSettings {
   motionDelayMs: number;
   motionScope: 'word' | 'line';
   motionEasing: 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out' | 'bounce';
-  textOutline: number;
-  textShadow: number;
+  textOutline?: number;
+  textShadow?: number;
   textGlow: number;
   textGradient: boolean;
   textGradientStart: string;
