@@ -31,6 +31,35 @@ BATCH_REQUESTS: Dict[str, RenderBatchRequest] = {}
 _RENDER_SEMAPHORE = asyncio.Semaphore(1)
 
 
+def _pro_caption_kwargs(settings: RenderSettingsModel) -> Dict[str, Any]:
+    """Map optional Hybrid Pro caption preferences to the ASS renderer."""
+    pro = getattr(settings, "pro_caption", None) or {}
+    return {
+        "ai_highlight_enabled": bool(pro.get("ai_highlight_enabled", False)),
+        "ai_highlight_words": pro.get("ai_highlight_words") or [],
+        "ai_highlight_color": pro.get("ai_highlight_color") or "#FFE600",
+        "ai_highlight_intensity": pro.get("ai_highlight_intensity", 72.0),
+        "motion_preset": pro.get("motion_preset") or "none",
+        "motion_speed": pro.get("motion_speed", 1.0),
+        "motion_duration_ms": pro.get("motion_duration_ms", 280),
+        "motion_intensity": pro.get("motion_intensity", 72.0),
+        "motion_delay_ms": pro.get("motion_delay_ms", 0),
+        "motion_scope": pro.get("motion_scope") or "word",
+        "motion_easing": pro.get("motion_easing") or "ease-out",
+        "text_outline": pro.get("text_outline", 4.8),
+        "text_shadow": pro.get("text_shadow", 2.0),
+        "text_glow": pro.get("text_glow", 0.0),
+        "text_gradient": bool(pro.get("text_gradient", False)),
+        "text_gradient_start": pro.get("text_gradient_start") or "#FFE600",
+        "text_gradient_end": pro.get("text_gradient_end") or "#00E5FF",
+        "text_background": bool(pro.get("text_background", False)),
+        "text_background_opacity": pro.get("text_background_opacity", 58.0),
+        "text_letter_spacing": pro.get("text_letter_spacing", 0.0),
+        "text_weight": pro.get("text_weight") or "bold",
+        "text_scale": pro.get("text_scale", 100.0),
+    }
+
+
 def add_render_log(batch_id: str, message: str, level: str = "info", clip_index: Optional[int] = None):
     """Append a bounded, timestamped real backend event to a render batch."""
     batch = RENDER_BATCHES.get(batch_id)
@@ -298,7 +327,8 @@ async def render_single_batch_clip(
                 title_font_size_px=settings.title_font_size_px,
                 title_text_case=settings.title_text_case or settings.text_case or "uppercase",
                 title_x_percent=getattr(settings, "title_x_percent", 50.0),
-                subtitle_offset_seconds=getattr(settings, "subtitle_offset_seconds", 0.0)
+                subtitle_offset_seconds=getattr(settings, "subtitle_offset_seconds", 0.0),
+                **_pro_caption_kwargs(settings)
             )
 
         # 3. Render Final Vertical MP4
@@ -807,7 +837,9 @@ async def render_merged_batch_clips(
                 title_font_name=settings.title_font or settings.caption_font or "Outfit",
                 font_size_px=settings.font_size_px,
                 title_font_size_px=settings.title_font_size_px,
-                title_text_case=settings.title_text_case or settings.text_case or "uppercase"
+                title_text_case=settings.title_text_case or settings.text_case or "uppercase",
+                subtitle_offset_seconds=getattr(settings, "subtitle_offset_seconds", 0.0),
+                **_pro_caption_kwargs(settings)
             )
 
         # 4. Render Final Single MP4
