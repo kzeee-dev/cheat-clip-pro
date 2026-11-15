@@ -2893,6 +2893,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     continue
 
                 line_parts = []
+                line_motion_override = _motion_override(0) if motion_scope == "line" else ""
+                glow_reset = max(0.0, min(8.0, float(text_glow)))
+                reset_word_tags = r"{\fscx100\fscy100\frz0\blur" + f"{glow_reset:.1f}" + r"\alpha&H00&}"
                 for idx, item in enumerate(chunk):
                     w_txt = item["word_text"]
                     raw_word = re.sub(r"^[^\w]+|[^\w]+$", "", str(item["raw"].get("word", "")).lower())
@@ -2900,19 +2903,25 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     is_active_word = idx == active_idx
                     active_prefix = ""
                     active_suffix = ""
-                    if is_active_word:
-                        # Match the editor's 8% karaoke emphasis independently of the global text scale.
-                        active_prefix = r"{\fscx108\fscy108}"
-                        active_suffix = r"{\rSubStyle}"
-                        if motion_scope != "line":
-                            active_prefix = _motion_override(active_idx) + active_prefix
+                    if motion_scope == "line":
+                        # Apply identical timing to every word so the whole caption line moves together.
+                        active_prefix = line_motion_override
+                        if is_active_word:
+                            # Match the editor's 8% karaoke emphasis independently of the global text scale.
+                            active_prefix += r"{\fscx108\fscy108}"
+                        if line_motion_override or is_active_word:
+                            active_suffix = reset_word_tags
+                    elif is_active_word:
+                        # Per-word motion and karaoke emphasis are limited to the active word only.
+                        active_prefix = _motion_override(active_idx) + r"{\fscx108\fscy108}"
+                        active_suffix = reset_word_tags
 
                     if is_ai_keyword or (text_gradient and is_active_word):
                         if text_gradient and len(chunk) > 1:
                             ratio = idx / max(1, len(chunk) - 1)
                             sr, sg, sb = _hex_rgb(text_gradient_start)
                             er, eg, eb = _hex_rgb(text_gradient_end)
-                            gradient_hex = "#{:02X}{:02X}{:02X}".format(round(sr + (er - sr) * ratio), round(sg + (eg - sg) * ratio), round(sb + (eb - sb) * ratio))
+                            gradient_hex = "#{:02X}{:02X}{:02X}".format(round(sr + (er - sr) * ratio), round(sg + (sg - sr) * 0 + (eg - sg) * ratio), round(sb + (eb - sb) * ratio))
                             word_color = _ass_color(gradient_hex)
                         else:
                             word_color = ai_highlight_ass
@@ -2921,11 +2930,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                         # Preserve the original word-by-word karaoke highlight.
                         line_parts.append(active_prefix + r"{\c" + highlight_color + r"\3c" + outline_color + r"}" + w_txt + r"{\c" + primary_color + r"\3c" + outline_color + r"}" + active_suffix)
                     else:
-                        line_parts.append(w_txt)
+                        line_parts.append(active_prefix + w_txt + active_suffix)
 
                 styled_line = " ".join(line_parts)
-                # Per-line motion is applied to the full ASS event; per-word motion is scoped above.
-                motion_override = _motion_override(active_idx) if motion_scope == "line" else ""
+                # Motion is now scoped to each word segment so word/line modes match the editor.
+                motion_override = ""
                 glow_tag = f"\\blur{max(0.0, min(8.0, float(text_glow))):.1f}" if text_glow > 0 else ""
                 # Keep the existing fixed caption position; effects are applied within the ASS event.
                 events.append(
