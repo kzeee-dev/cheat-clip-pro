@@ -9,6 +9,7 @@ on:
       - integrate/visual-analysis-android
       - snapshot/phone-project-2026-11-13
       - feature/hybrid-pro-studio-2026-11-13
+      - audit/render-parity-2026-11-15
   pull_request:
     branches:
       - snapshot/phone-project-2026-11-13
