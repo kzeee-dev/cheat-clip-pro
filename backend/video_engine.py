@@ -2706,7 +2706,7 @@ def generate_ass_file(
             round(255 + (blue - 255) * amount),
         )
 
-    ai_highlight_ass = _ass_color(_blend_with_white(ai_highlight_color, ai_highlight_intensity))
+    ai_highlight_ass = _ass_color(ai_highlight_color)
     ai_words = {
         re.sub(r"^[^\w]+|[^\w]+$", "", str(word).lower())
         for word in (ai_highlight_words or [])
@@ -2897,24 +2897,35 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     w_txt = item["word_text"]
                     raw_word = re.sub(r"^[^\w]+|[^\w]+$", "", str(item["raw"].get("word", "")).lower())
                     is_ai_keyword = bool(ai_highlight_enabled and raw_word in ai_words)
-                    if is_ai_keyword or (text_gradient and idx == active_idx):
+                    is_active_word = idx == active_idx
+                    active_prefix = ""
+                    active_suffix = ""
+                    if is_active_word:
+                        # Match the editor's 8% karaoke emphasis independently of the global text scale.
+                        active_prefix = r"{\fscx108\fscy108}"
+                        active_suffix = r"{\rSubStyle}"
+                        if motion_scope != "line":
+                            active_prefix = _motion_override(active_idx) + active_prefix
+
+                    if is_ai_keyword or (text_gradient and is_active_word):
                         if text_gradient and len(chunk) > 1:
                             ratio = idx / max(1, len(chunk) - 1)
                             sr, sg, sb = _hex_rgb(text_gradient_start)
                             er, eg, eb = _hex_rgb(text_gradient_end)
                             gradient_hex = "#{:02X}{:02X}{:02X}".format(round(sr + (er - sr) * ratio), round(sg + (eg - sg) * ratio), round(sb + (eb - sb) * ratio))
-                            word_color = _ass_color(_blend_with_white(gradient_hex, ai_highlight_intensity))
+                            word_color = _ass_color(gradient_hex)
                         else:
                             word_color = ai_highlight_ass
-                        line_parts.append(r"{\c" + word_color + r"\3c" + outline_color + r"}" + w_txt + r"{\c" + primary_color + r"\3c" + outline_color + r"}")
-                    elif idx == active_idx:
+                        line_parts.append(active_prefix + r"{\c" + word_color + r"\3c" + outline_color + r"}" + w_txt + r"{\c" + primary_color + r"\3c" + outline_color + r"}" + active_suffix)
+                    elif is_active_word:
                         # Preserve the original word-by-word karaoke highlight.
-                        line_parts.append(r"{\c" + highlight_color + r"\3c" + outline_color + r"}" + w_txt + r"{\c" + primary_color + r"\3c" + outline_color + r"}")
+                        line_parts.append(active_prefix + r"{\c" + highlight_color + r"\3c" + outline_color + r"}" + w_txt + r"{\c" + primary_color + r"\3c" + outline_color + r"}" + active_suffix)
                     else:
                         line_parts.append(w_txt)
 
                 styled_line = " ".join(line_parts)
-                motion_override = _motion_override(active_idx)
+                # Per-line motion is applied to the full ASS event; per-word motion is scoped above.
+                motion_override = _motion_override(active_idx) if motion_scope == "line" else ""
                 glow_tag = f"\\blur{max(0.0, min(8.0, float(text_glow))):.1f}" if text_glow > 0 else ""
                 # Keep the existing fixed caption position; effects are applied within the ASS event.
                 events.append(

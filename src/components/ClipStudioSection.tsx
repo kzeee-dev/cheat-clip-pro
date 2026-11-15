@@ -85,6 +85,38 @@ const CAPTION_STYLE_CONFIG: Record<CaptionStyle, { highlight: string; sample: [s
   none: { highlight: '#FFFFFF', sample: ['', ''] },
 };
 
+const MOTION_PREVIEW_EASING: Record<ProCaptionSettings['motionEasing'], string> = {
+  linear: 'linear',
+  'ease-in': 'ease-in',
+  'ease-out': 'ease-out',
+  'ease-in-out': 'ease-in-out',
+  bounce: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+};
+
+function getMotionPreviewVariables(settings: ProCaptionSettings): React.CSSProperties {
+  const strength = Math.max(0, Math.min(100, Number(settings.motionIntensity) || 0)) / 100;
+  return {
+    '--ccp-motion-scale-in': String(1 - 0.06 * strength),
+    '--ccp-motion-impact': String(1 + 0.22 * strength),
+    '--ccp-motion-settle': String(1 - 0.04 * strength),
+    '--ccp-motion-pop': String(1 + 0.08 * strength),
+    '--ccp-motion-scale-small': String(1 - 0.18 * strength),
+    '--ccp-motion-rotate': String(-4 * strength) + 'deg',
+    '--ccp-motion-translate-y': String(3 * strength) + 'px',
+    '--ccp-motion-bounce-start-x': String(1 - 0.22 * strength),
+    '--ccp-motion-bounce-start-y': String(1 - 0.28 * strength),
+    '--ccp-motion-bounce-over-x': String(1 + 0.12 * strength),
+    '--ccp-motion-bounce-over-y': String(1 + 0.16 * strength),
+    '--ccp-motion-glitch-x-negative': String(-2 * strength) + 'px',
+    '--ccp-motion-glitch-x-positive': String(2 * strength) + 'px',
+    '--ccp-motion-glitch-rotate-negative': String(-3 * strength) + 'deg',
+    '--ccp-motion-glitch-rotate-positive': String(3 * strength) + 'deg',
+    '--ccp-motion-slide-x': String(18 * strength) + 'px',
+    '--ccp-motion-focus-scale': String(1 + 0.2 * strength),
+    '--ccp-motion-blur': String(5 * strength) + 'px',
+  } as React.CSSProperties;
+}
+
 interface ClipStudioSectionProps {
   videoUrl: string;
   videoId: string;
@@ -5090,6 +5122,12 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                         fontWeight: proCaption.textWeight === 'normal' ? 500 : proCaption.textWeight === 'black' ? 900 : 800,
                         letterSpacing: `${0.03 + proCaption.textLetterSpacing / 100}em`,
                         transform: `scale(${proCaption.textScale / 100})`,
+                        ...getMotionPreviewVariables(proCaption),
+                        animation: activeCaption && proCaption.motionScope === 'line' && proCaption.motionPreset !== 'none' && activeCaption.activeWordIndex === 0
+                          ? 'ccp-motion-' + proCaption.motionPreset + ' ' + Math.max(0.1, proCaption.motionDurationMs / 1000 / proCaption.motionSpeed) + 's both'
+                          : undefined,
+                        animationTimingFunction: MOTION_PREVIEW_EASING[proCaption.motionEasing],
+                        animationDelay: String(proCaption.motionDelayMs) + 'ms',
                         textAlign: 'center',
                         textShadow: `0 0 ${Math.max(2, proCaption.textGlow * 2)}px ${proCaption.aiHighlightColor}88, 0 1px ${Math.max(3, (proCaption.textShadow ?? 2) * 2)}px rgba(0,0,0,0.95)`,
                         WebkitTextStroke: `${Math.max(0, (proCaption.textOutline ?? 4.8) / 5)}px #111111`,
@@ -5115,11 +5153,15 @@ export const ClipStudioSection: React.FC<ClipStudioSectionProps> = ({
                                   backgroundImage: proCaption.textGradient && (isKeyword || isActive) ? `linear-gradient(90deg, ${proCaption.textGradientStart}, ${proCaption.textGradientEnd})` : undefined,
                                   backgroundClip: proCaption.textGradient && (isKeyword || isActive) ? 'text' : undefined,
                                   WebkitBackgroundClip: proCaption.textGradient && (isKeyword || isActive) ? 'text' : undefined,
-                                  transform: isActive ? `scale(${Math.max(1.08, proCaption.textScale / 100)})` : 'scale(1)',
+                                  transform: isActive ? 'scale(1.08)' : 'scale(1)',
+                                  ...getMotionPreviewVariables(proCaption),
                                   display: 'inline-block',
                                   transition: 'transform 0.08s ease, color 0.08s ease',
-                                  animation: isActive && proCaption.motionPreset !== 'none' && (proCaption.motionScope !== 'line' || idx === 0) ? `ccp-motion-${proCaption.motionPreset} ${Math.max(0.1, proCaption.motionDurationMs / 1000 / proCaption.motionSpeed)}s ease-out both` : undefined,
-                                  animationDelay: isActive ? `${proCaption.motionDelayMs}ms` : undefined,
+                                  animation: isActive && proCaption.motionPreset !== 'none' && proCaption.motionScope === 'word'
+                                    ? 'ccp-motion-' + proCaption.motionPreset + ' ' + Math.max(0.1, proCaption.motionDurationMs / 1000 / proCaption.motionSpeed) + 's both'
+                                    : undefined,
+                                  animationTimingFunction: MOTION_PREVIEW_EASING[proCaption.motionEasing],
+                                  animationDelay: isActive ? String(proCaption.motionDelayMs) + 'ms' : undefined,
                                   textShadow: isActive || isKeyword
                                     ? `0 0 ${Math.max(3, proCaption.textGlow * 2)}px ${color}99, 0 1px ${Math.max(4, (proCaption.textShadow ?? 2) * 2)}px rgba(0,0,0,0.95)`
                                     : '0 0 2px #000, 0 1px 3px rgba(0,0,0,0.95), 0 0 5px rgba(0,0,0,0.8)',
