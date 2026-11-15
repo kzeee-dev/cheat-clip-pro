@@ -87,3 +87,32 @@ Branch: `snapshot/phone-project-2026-11-13`
 - Physical Android device validation: portrait/landscape, timeline marker seeking, playback, caption preview, downloads and rendering regressions.
 - AI keyword highlighting, motion presets, advanced text effects and deeper editor layout remain planned; not yet implemented.
 - The accepted baseline branch `fix/media-source-resilience` and release signing configuration were not modified.
+
+
+## 2026-11-15 — Clip Studio preview/render parity audit
+Branch: audit/render-parity-2026-11-15
+
+### Findings and changes
+- The editor preview used hard-coded ease-out, did not apply the motion-intensity slider to animation amplitude, and treated line scope as a first-word animation.
+- The preview multiplied active-word emphasis by the global text scale, while the ASS renderer only scaled the caption font.
+- The ASS renderer applied word motion to the entire caption chunk and blended selected AI/gradient colors with white even though the UI labels the intensity control as detection intensity.
+- Updated the preview to use the selected easing, intensity-derived CSS variables, and distinct word/line motion scope. Kept the 8% active-word emphasis separate from global text scaling.
+- Updated ASS generation to scope word motion to the active word, apply line motion consistently to all words, preserve the selected highlight/gradient colors, and match the active-word emphasis.
+- Added the isolated audit branch to the Android CI push filter.
+
+### Files changed
+- src/components/ClipStudioSection.tsx
+- src/styles/studio-controls.css
+- backend/video_engine.py
+- .github/workflows/build-android.yml
+
+### Validation
+- GitHub Actions run 43719834072: SUCCESS.
+- Python compileall, frontend TypeScript/Vite build, Capacitor sync, Gradle assembleDebug, and APK artifact upload all passed.
+- Artifact: Cheat-Clip-Pro-Debug-APK, 4,033,210 bytes; SHA-256 cfe9e542432680cae15d508030741a6c899fdfcacd8cf15556cd62eb87dc85f3.
+- Physical Android/Termux render tests are still pending; CI success is not proof of visual parity or runtime behavior.
+
+### Security audit finding (not changed in this session)
+- verify_admin_access() permits unauthenticated administrative requests when neither ADMIN_API_KEY nor CHEAT_CLIP_API_KEY is set.
+- The Termux helper, desktop backend launcher and Docker configuration bind Uvicorn to 0.0.0.0; server deployments may therefore expose admin cleanup/update/restart routes without an API key.
+- This requires a separate compatibility-aware security fix. Do not silently change local desktop behavior before confirming server-mode expectations.

@@ -54,3 +54,20 @@ Do not mark a checkbox complete without an actual test result.
 - [ ] Tapping transcript caption markers seeks to the corresponding timestamp.
 - [ ] Empty transcript state displays safely without breaking preview.
 - [ ] Orientation change preserves selected clip, playback position and editor settings.
+
+
+## Hybrid Pro caption regression checks
+- [ ] AI-highlighted words in the final MP4 use the same selected color as the Studio preview.
+- [ ] AI-highlight intensity changes detection selection, not the selected color brightness.
+- [ ] Each motion preset renders in word scope without animating adjacent words.
+- [ ] Each motion preset renders in line scope with the caption line moving together.
+- [ ] Motion speed, duration, intensity, delay and easing affect preview and final render consistently.
+- [ ] Global text scale and the 8% active-word emphasis are independent.
+- [ ] Text outline, shadow, glow, gradient, background, spacing and weight are checked in final MP4.
+- [ ] Repeat checks for separate and merged render modes.
+- [ ] Confirm subtitle timing remains synchronized after motion/effects.
+
+## Server security
+- [ ] In server/container mode, administrative endpoints reject requests when no admin API key is configured.
+- [ ] Valid X-API-Key and Bearer token are accepted when configured.
+- [ ] Local desktop mode retains its documented no-key behavior.

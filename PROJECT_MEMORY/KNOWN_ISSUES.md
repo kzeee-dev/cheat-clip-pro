@@ -28,3 +28,18 @@ Do not silently fix these items. Inspect, reproduce, assess impact and record th
 - Verification: two-sentence, comma-separated phrase, and short-transcript cases behaved as expected; `py_compile` and `git diff --check` passed.
 - Status: RESOLVED IN LOCAL WORKTREE; no live backend/device test or APK build performed.
 - Backup retained: `backend/routers/analyze.py.before_distinct_fallback_titles_20261112_163408`.
+
+
+## 2026-11-15 audit findings
+
+### Admin routes may be unauthenticated in server mode — HIGH PRIORITY, NOT FIXED
+- backend/routers/system.py::verify_admin_access() returns True when neither ADMIN_API_KEY nor CHEAT_CLIP_API_KEY is configured.
+- ccp-server.sh, scripts/start-backend.js, Dockerfile, and docker-compose.yml bind the backend to 0.0.0.0.
+- In a server/container deployment without an admin key, cleanup/update/restart endpoints may be reachable by other network clients. CORS is not an authentication control.
+- Proposed direction: require an admin key in is_server_environment() while preserving the existing no-key local desktop behavior. Validate UI compatibility and deployment configuration before applying.
+
+### Hybrid Pro visual parity — PARTIALLY RESOLVED, DEVICE VALIDATION PENDING
+- Preview and ASS use different rendering engines; exact pixel parity is not guaranteed.
+- The black text-weight option currently maps to ASS bold, not a true 900-weight font face.
+- Android device testing is still required for all nine motion presets, word/line scope, subtitle timing, gradient/keyword colors and background/outline effects.
+- Chrome/DownloadManager behavior and Android notification behavior still need device validation.

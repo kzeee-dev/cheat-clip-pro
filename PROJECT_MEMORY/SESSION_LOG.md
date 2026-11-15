@@ -110,3 +110,16 @@ No application source files were modified while creating this documentation.
 - Timeline behavior on real video, landscape orientation, touch accuracy and full render/download regressions remain pending.
 - AI keyword classification, motion presets and advanced text effects have not yet been implemented.
 - No release APK or signing configuration was changed. Baseline branch `fix/media-source-resilience` remains untouched.
+
+
+## 2026-11-15 — Render parity audit
+- Audited the current GitHub source tree (209 tracked files) on the Hybrid Pro branch and created isolated branch audit/render-parity-2026-11-15 from 9278a1a.
+- Existing feature branch and draft PR #4 remain unchanged; accepted baseline fix/media-source-resilience / build #142 remains untouched.
+- Found preview/render mismatches: hard-coded preview easing, missing preview motion-intensity scaling, incorrect line-scope preview semantics, double-counted active-word scale, whole-chunk ASS motion in word mode, and ASS color blending inconsistent with the selected color.
+- Fixed the preview and ASS renderer in ClipStudioSection.tsx, studio-controls.css, and video_engine.py.
+- Added the isolated branch to .github/workflows/build-android.yml so its own push runs CI.
+- Commits: 71c2b19 (preview/ASS parity), a63c5ba (ASS motion scope), 4c5aaf7 (CI branch trigger).
+- CI run 43719834072 completed SUCCESS: Python syntax, frontend build, Capacitor sync, Gradle debug APK and artifact upload all passed.
+- Artifact: 4,033,210 bytes; SHA-256 cfe9e542432680cae15d508030741a6c899fdfcacd8cf15556cd62eb87dc85f3.
+- PR #6 is open as draft against snapshot/phone-project-2026-11-13; it is not merged. Physical-device testing remains pending.
+- Separate security audit found that admin routes are open by default when no API key is configured, while launchers bind to 0.0.0.0. No security code was changed yet; this is tracked in KNOWN_ISSUES.md for a separate fix.

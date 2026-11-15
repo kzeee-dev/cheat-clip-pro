@@ -33,3 +33,11 @@ Record the exact test and result in SESSION_LOG.md or REGRESSION_CHECKLIST.md.
 
 - Interactive Clip Studio timeline (video track, transcript caption markers, playhead, tap-to-seek) — IMPLEMENTED; CI APK build verified; device validation pending
 - Responsive Clip Studio workspace (mobile portrait, compact landscape, tablet, safe areas) — IMPLEMENTED; CI APK build verified; device validation pending
+
+
+## Hybrid Pro Clip Studio
+- Transcript-based AI keyword highlighting with manual include/exclude controls — IMPLEMENTED; device validation pending.
+- Nine caption motion presets with speed, duration, intensity, delay, easing and word/line scope — IMPLEMENTED; device validation pending.
+- Advanced caption outline, shadow, glow, gradient, background, spacing, weight and scale controls — IMPLEMENTED; device validation pending.
+- Backend ASS rendering receives Pro caption settings for separate and merged output — IMPLEMENTED; CI verified.
+- Preview/render parity refinements for motion intensity/easing/scope, active-word emphasis and selected highlight colors — IMPLEMENTED on audit/render-parity-2026-11-15; CI verified.
