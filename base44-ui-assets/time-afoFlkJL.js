@@ -1,0 +1,1 @@
+function e(e){let t=Math.max(0,e),n=Math.floor(t/60),r=Math.floor(t%60);return`${String(n).padStart(2,`0`)}:${String(r).padStart(2,`0`)}`}function t(e){return typeof e==`number`?e:e.split(`:`).reduce((e,t)=>e*60+parseFloat(t),0)}export{t as n,e as t};

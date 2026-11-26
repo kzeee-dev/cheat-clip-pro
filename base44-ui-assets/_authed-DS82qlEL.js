@@ -1,0 +1,1 @@
+import{r as e}from"./index-DVd7LiVt.js";var t=e;export{t as errorComponent};
